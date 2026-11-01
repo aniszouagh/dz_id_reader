@@ -50,7 +50,20 @@ class DocumentView extends StatelessWidget {
       ('Address', doc.address),
       ('Date of issue', date(doc.dateOfIssue)),
       ('Issuing authority', doc.issuingAuthority),
-      ('Licence categories', doc.licenceCategories?.join(', ')),
+      (
+        'Licence categories',
+        doc.licenceCategories
+            ?.map(
+              (c) => [
+                c.code,
+                if (c.dateOfIssue != null || c.dateOfExpiry != null)
+                  '(${date(c.dateOfIssue) ?? '?'} to ${date(c.dateOfExpiry) ?? '?'})',
+                if (c.conditions != null) c.conditions!,
+              ].join(' '),
+            )
+            .join('\n'),
+      ),
+      ('Blood group', doc.bloodGroup),
       for (final MapEntry(:key, :value) in doc.otherDetails.entries)
         (key, value),
       ('MRZ', doc.mrz),
@@ -185,35 +198,63 @@ class _SecurityCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final signer = security.documentSigner;
     String day(DateTime d) => formatDate(d);
+    final signerText = signer == null
+        ? null
+        : '${signer.subject}\nIssued by: ${signer.issuer}\n'
+              'Valid ${day(signer.validFrom)} to ${day(signer.validTo)}, '
+              '${signer.keyDescription}';
+    final key = security.chipKey;
     final rows = [
       (
         'Chip is genuine',
-        security.chipKey == null
-            ? 'Active Authentication'
-            : 'Signed our random challenge with its ${security.chipKey} key',
+        switch (security.chipGenuine) {
+          CheckStatus.passed => 'Signed our random challenge with its $key key',
+          CheckStatus.failed =>
+            'Its signature on our random challenge is wrong'
+                '${key == null ? '' : ' ($key key)'}',
+          CheckStatus.notSupported =>
+            'This document has no Active Authentication key',
+          CheckStatus.notChecked => 'Not asked',
+        },
         security.chipGenuine,
       ),
       (
         'Data unchanged since issue',
-        security.changedFiles.isEmpty
-            ? 'The values match the hashes the issuer signed'
-            : 'Changed: ${security.changedFiles.join(', ')}',
+        switch (security.dataUnchanged) {
+          CheckStatus.passed => 'The values match the hashes the issuer signed',
+          CheckStatus.failed => 'Changed: ${security.changedFiles.join(', ')}',
+          CheckStatus.notSupported =>
+            'No signed list of hashes (EF.SOD) on this document',
+          CheckStatus.notChecked => 'Not asked',
+        },
         security.dataUnchanged,
       ),
       (
         'Signed by the issuer',
-        signer == null
-            ? 'No signer certificate'
-            : '${signer.subject}\nIssued by: ${signer.issuer}\n'
-                  'Valid ${day(signer.validFrom)} to ${day(signer.validTo)}, '
-                  '${signer.keyDescription}',
+        switch (security.issuerSignature) {
+          CheckStatus.passed => signerText!,
+          CheckStatus.failed =>
+            'The signature does not check out'
+                '${signerText == null ? '' : '\n$signerText'}',
+          CheckStatus.notSupported =>
+            signerText == null
+                ? 'No signer certificate on this document'
+                : 'Signature algorithm not supported\n$signerText',
+          CheckStatus.notChecked => 'Not asked',
+        },
         security.issuerSignature,
       ),
       (
         'Country certificate (CSCA)',
-        security.countryCertificate == CheckStatus.notChecked
-            ? 'Not checked: no country certificate given to the reader'
-            : 'The signer belongs to a trusted country certificate',
+        switch (security.countryCertificate) {
+          CheckStatus.passed =>
+            'The signer belongs to a trusted country certificate',
+          CheckStatus.failed =>
+            'The signer is under none of the trusted country certificates',
+          CheckStatus.notSupported => 'No signer certificate to check',
+          CheckStatus.notChecked =>
+            'No country certificate given to the reader',
+        },
         security.countryCertificate,
       ),
     ];
@@ -244,7 +285,7 @@ class _SecurityCard extends StatelessWidget {
   static String _statusText(CheckStatus s) => switch (s) {
     CheckStatus.passed => 'Passed',
     CheckStatus.failed => 'FAILED',
-    CheckStatus.notSupported => 'Not possible on this document',
+    CheckStatus.notSupported => 'Not possible',
     CheckStatus.notChecked => 'Not checked',
   };
 }

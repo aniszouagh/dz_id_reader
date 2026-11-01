@@ -25,8 +25,10 @@ abstract interface class NfcTransport {
   /// Waits up to [timeout] for a card and connects to it. Throws
   /// [NoCardException] on timeout and [ConnectCancelledException] after
   /// [cancel].
-  Future<CardLink> connect(
-      {required Duration timeout, required Duration commandTimeout});
+  Future<CardLink> connect({
+    required Duration timeout,
+    required Duration commandTimeout,
+  });
 
   /// Ends a pending [connect].
   Future<void> cancel();

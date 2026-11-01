@@ -40,10 +40,7 @@ void main() {
   });
 
   test('fixes common OCR mistakes', () {
-    const noisy = [
-      '| IDDZA12345678 97««<<<<',
-      '9OO1O11M3OO1O19DZA<<<',
-    ];
+    const noisy = ['| IDDZA12345678 97««<<<<', '9OO1O11M3OO1O19DZA<<<'];
     final f = MrzFinder()
       ..addFrame(noisy)
       ..addFrame(noisy);

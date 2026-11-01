@@ -1,6 +1,8 @@
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:logging/logging.dart';
+
 import '../nfc/transport.dart';
 import 'apdu.dart';
 import 'bac.dart';
@@ -54,45 +56,51 @@ int? tlvTotalLength(List<int> head) {
 
 /// One connection to the chip: select the app, unlock it, read files.
 class ChipSession {
-  ChipSession(this._link, {required bool extendedReads})
-      : _extended = extendedReads && _link.extendedLength;
+  /// [bigChunk] is the big-read size to use (0 for none); it only applies
+  /// when the phone sends extended-length commands.
+  ChipSession(this._link, {required int bigChunk})
+    : _bigChunk = _link.extendedLength ? bigChunk : 0;
+
+  static final _log = Logger('dz_id_reader');
 
   final CardLink _link;
   SecureMessaging? _sm;
   ChipApp? _app;
   BacKey? _key;
-  bool _extended;
+  int _bigChunk;
 
   /// Commands sent, for the timing report.
   int commands = 0;
-
-  /// The chip refused a big (extended-length) read; the reader remembers
-  /// this for the next tries.
-  bool extendedRefused = false;
 
   /// Short reads: 223 bytes is the most a short answer holds after secure
   /// messaging adds its padding, status and MAC.
   static const shortChunk = 0xDF;
 
   /// Big reads, when the phone and the chip both take extended-length
-  /// commands.
-  static const extendedChunk = 0x0800;
+  /// commands: 2 KB, or 960 bytes (a 1 KB answer with secure messaging)
+  /// when the chip refuses 2 KB.
+  static const bigChunk = 0x800;
+  static const mediumChunk = 0x3C0;
 
-  bool get usesExtendedReads => _extended;
+  /// The big-read size this session ended with, 0 when big reads are off.
+  /// The reader keeps it for the next reads of the same document.
+  int get bigReadSize => _bigChunk;
 
   Future<ResponseApdu> send(CommandApdu command) async {
     commands++;
     final sm = _sm;
-    final raw = await _link
-        .transceive(sm == null ? command.encode() : sm.wrap(command));
+    final raw = await _link.transceive(
+      sm == null ? command.encode() : sm.wrap(command),
+    );
     return sm == null ? ResponseApdu.parse(raw) : sm.unwrap(raw);
   }
 
   /// Selects the first of [apps] the chip has. Null when it has none.
   Future<ChipApp?> selectApp(List<ChipApp> apps) async {
     for (final app in apps) {
-      final r = await send(CommandApdu(0x00, 0xA4, 0x04, 0x0C,
-          data: Uint8List.fromList(app.aid)));
+      final r = await send(
+        CommandApdu(0x00, 0xA4, 0x04, 0x0C, data: Uint8List.fromList(app.aid)),
+      );
       if (r.sw == Sw.ok) return _app = app;
     }
     return null;
@@ -110,16 +118,20 @@ class ChipSession {
   /// way), select and unlock again.
   Future<void> _reopen() async {
     _sm = null;
-    await selectApp([_app!]);
+    if (await selectApp([_app!]) == null) {
+      throw ChipStatusException(Sw.fileNotFound, 'SELECT again');
+    }
     await unlock(_key!);
   }
 
   /// Reads the file with short file identifier [sfi]. [have] holds the
   /// start of the file from an interrupted try; reading goes on from there.
   /// [onBytes] gets the bytes read so far and the file size.
-  Future<Uint8List> readFile(int sfi,
-      {Uint8List? have,
-      void Function(Uint8List soFar, int total)? onBytes}) async {
+  Future<Uint8List> readFile(
+    int sfi, {
+    Uint8List? have,
+    void Function(Uint8List soFar, int total)? onBytes,
+  }) async {
     final out = BytesBuilder(copy: false);
     final known = have == null ? null : tlvTotalLength(have);
     int total;
@@ -130,8 +142,12 @@ class ChipSession {
       total = known;
     } else {
       final first = await _readBinary(0x80 | sfi, 0, shortChunk);
-      total = tlvTotalLength(first) ??
-          (throw ChipStatusException(Sw.wrongData, 'file ${_sfiName(sfi)} header'));
+      total =
+          tlvTotalLength(first) ??
+          (throw ChipStatusException(
+            Sw.wrongData,
+            'file ${_sfiName(sfi)} header',
+          ));
       out.add(first);
     }
     while (out.length < total) {
@@ -142,44 +158,56 @@ class ChipSession {
       try {
         data = await _readAt(offset, left);
       } on _Reselect {
-        await _reopen();
+        // After a refused command the chip may have dropped the session or
+        // forgotten the current file.
+        if (_sm?.broken ?? true) await _reopen();
         await _readBinary(0x80 | sfi, 0, 1);
         continue;
       }
       if (data.isEmpty) {
-        throw ChipStatusException(Sw.offsetOutsideFile, 'READ BINARY at $offset');
+        throw ChipStatusException(
+          Sw.offsetOutsideFile,
+          'READ BINARY at $offset',
+        );
       }
       out.add(data.length > left ? Uint8List.sublistView(data, 0, left) : data);
     }
     final bytes = out.takeBytes();
-    return bytes.length > total ? Uint8List.sublistView(bytes, 0, total) : bytes;
+    return bytes.length > total
+        ? Uint8List.sublistView(bytes, 0, total)
+        : bytes;
   }
 
   Future<Uint8List> _readAt(int offset, int left) async {
-    final big = _extended && left > shortChunk;
-    final ne = big ? min(left, extendedChunk) : min(left, shortChunk);
+    final big = _bigChunk > 0 && left > shortChunk;
+    final ne = big ? min(left, _bigChunk) : min(left, shortChunk);
     try {
       if (offset <= 0x7FFF) {
         return await _readBinary(offset >> 8, offset & 0xFF, ne);
       }
       return await _readBinaryOdd(offset, ne);
-    } on ChipStatusException {
+    } on ChipStatusException catch (e) {
       if (!big) rethrow;
-      // The chip does not take big reads: go on with short ones. If it
-      // also dropped secure messaging, open the session again first.
-      _extended = false;
-      extendedRefused = true;
-      if (_sm?.broken ?? false) throw const _Reselect();
-      return _readAt(offset, left);
-    } on SecureMessagingException {
+      // A chip that answers in clear and drops the session cannot parse
+      // extended-length commands at all: short reads from now on. One that
+      // answers properly may only refuse the size: try a smaller one.
+      final dropped = _sm?.broken ?? true;
+      _bigChunk = !dropped && _bigChunk > mediumChunk ? mediumChunk : 0;
+      _log.info(
+        'Big read of $ne bytes refused (${Sw.name(e.sw)}, session '
+        '${dropped ? 'dropped' : 'kept'}); '
+        '${_bigChunk > 0 ? 'trying $_bigChunk bytes' : 'short reads'} now',
+      );
+      throw const _Reselect();
+    } on SecureMessagingException catch (e) {
       if (!big) rethrow;
-      _extended = false;
-      extendedRefused = true;
+      _bigChunk = 0;
+      _log.info('Big read of $ne bytes failed ($e); short reads now');
       throw const _Reselect();
     } on CardLostException {
-      // Maybe the card moved, maybe the phone or chip choked on the big
-      // command. The reader tries the next connection without big reads.
-      if (big) extendedRefused = true;
+      // Maybe the card moved, maybe the phone or the chip choked on the big
+      // command. The next connection reads without big reads.
+      if (big) _bigChunk = 0;
       rethrow;
     }
   }
@@ -202,9 +230,16 @@ class ChipSession {
       offset >> 8 & 0xFF,
       offset & 0xFF,
     ];
-    final r = await send(CommandApdu(0x00, 0xB1, 0x00, 0x00,
+    final r = await send(
+      CommandApdu(
+        0x00,
+        0xB1,
+        0x00,
+        0x00,
         data: Uint8List.fromList([0x54, offsetBytes.length, ...offsetBytes]),
-        ne: ne + 4));
+        ne: ne + 4,
+      ),
+    );
     final data = _data(r, 'READ BINARY (odd)');
     if (data.isEmpty || data[0] != 0x53) return data;
     final end = tlvTotalLength(data) ?? data.length;
@@ -237,21 +272,24 @@ class ChipSession {
   /// Active Authentication: the chip signs [challenge] with its private
   /// key. [signatureLength] comes from the public key in DG15.
   Future<Uint8List> internalAuthenticate(
-      Uint8List challenge, int signatureLength) async {
-    final ne = signatureLength > shortChunk && _link.extendedLength
+    Uint8List challenge,
+    int signatureLength,
+  ) async {
+    final ne = signatureLength > shortChunk && _bigChunk > 0
         ? signatureLength
         : 256;
     final r = await send(
-        CommandApdu(0x00, 0x88, 0x00, 0x00, data: challenge, ne: ne));
+      CommandApdu(0x00, 0x88, 0x00, 0x00, data: challenge, ne: ne),
+    );
     if (r.sw != Sw.ok) throw ChipStatusException(r.sw, 'INTERNAL AUTHENTICATE');
     return r.data;
   }
 
   static String _sfiName(int sfi) => switch (sfi) {
-        0x1D => 'EF.SOD',
-        0x1E => 'EF.COM',
-        _ => 'DG$sfi',
-      };
+    0x1D => 'EF.SOD',
+    0x1E => 'EF.COM',
+    _ => 'DG$sfi',
+  };
 }
 
 class _Reselect implements Exception {

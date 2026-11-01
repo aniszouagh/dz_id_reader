@@ -9,4 +9,5 @@ library;
 
 export 'src/nfc/transport.dart';
 export 'src/testing/demo_files.dart' show demoCountryCertificate;
+export 'src/testing/demo_licence.dart' show demoLicenceKey;
 export 'src/testing/fake_card.dart';

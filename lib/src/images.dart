@@ -27,8 +27,13 @@ class DocumentImage {
     }
     final rgba = await _decodeJpeg2000InBackground(bytes);
     final done = Completer<ui.Image>();
-    ui.decodeImageFromPixels(rgba.pixels, rgba.width, rgba.height,
-        ui.PixelFormat.rgba8888, done.complete);
+    ui.decodeImageFromPixels(
+      rgba.pixels,
+      rgba.width,
+      rgba.height,
+      ui.PixelFormat.rgba8888,
+      done.complete,
+    );
     return done.future;
   }
 
@@ -48,8 +53,10 @@ class DocumentImage {
 
 const _starts = [
   // JP2 file signature box, JPEG 2000 codestream (SOC + SIZ), JPEG (SOI).
-  ([0x00, 0x00, 0x00, 0x0C, 0x6A, 0x50, 0x20, 0x20, 0x0D, 0x0A, 0x87, 0x0A],
-      ImageFormat.jpeg2000),
+  (
+    [0x00, 0x00, 0x00, 0x0C, 0x6A, 0x50, 0x20, 0x20, 0x0D, 0x0A, 0x87, 0x0A],
+    ImageFormat.jpeg2000,
+  ),
   ([0xFF, 0x4F, 0xFF, 0x51], ImageFormat.jpeg2000),
   ([0xFF, 0xD8, 0xFF], ImageFormat.jpeg),
 ];
@@ -88,8 +95,8 @@ int _indexOf(Uint8List data, List<int> pattern) {
 /// to the isolate carries only [bytes]: a closure takes its scope's whole
 /// context along.
 Future<({Uint8List pixels, int width, int height})> _decodeJpeg2000InBackground(
-        Uint8List bytes) =>
-    Isolate.run(() => decodeJpeg2000(bytes));
+  Uint8List bytes,
+) => Isolate.run(() => decodeJpeg2000(bytes));
 
 /// JPEG 2000 to one RGBA buffer (the decoder returns RGBA tiles).
 ({Uint8List pixels, int width, int height}) decodeJpeg2000(Uint8List bytes) {
@@ -99,8 +106,7 @@ Future<({Uint8List pixels, int width, int height})> _decodeJpeg2000InBackground(
   for (final tile in jpx.tiles) {
     for (var y = 0; y < tile.height; y++) {
       final to = ((tile.top + y) * width + tile.left) * 4;
-      pixels.setRange(
-          to, to + tile.width * 4, tile.items, y * tile.width * 4);
+      pixels.setRange(to, to + tile.width * 4, tile.items, y * tile.width * 4);
     }
   }
   return (pixels: pixels, width: width, height: height);

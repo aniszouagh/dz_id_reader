@@ -80,28 +80,44 @@ try {
 
 ### What you can ask for
 
-| `Info` | Chip file (ID card, passport) | Time on an Algerian ID card |
+Each value lives in a chip file; times are from real reads (release build,
+Redmi 14C).
+
+ID card and passport (ICAO 9303):
+
+| `Info` | File | Algerian ID card |
 |---|---|---|
-| `documentType`, `documentNumber`, `names`, `sex`, `nationality`, `dateOfBirth`, `dateOfExpiry`, `issuingCountry`, `mrz` | DG1 | 0.2 s, unlock included |
-| `nin`, `fullName`, `otherNames`, `placeOfBirth`, `address` | DG11 | + 0.06 s |
-| `dateOfIssue`, `issuingAuthority` | DG12 | + 0.06 s |
+| `documentType`, `documentNumber`, `names`, `sex`, `nationality`, `dateOfBirth`, `dateOfExpiry`, `issuingCountry`, `mrz` | DG1 | 0.15 s, unlock included |
+| `nin`, `fullName`, `otherNames`, `placeOfBirth`, `address` | DG11 | + 0.09 s |
+| `dateOfIssue`, `issuingAuthority` | DG12 | + 0.05 s |
 | `otherDetails` (other DG11/DG12 values, by tag) | DG11 + DG12 | |
-| `signature` | DG7 | + 1.4 s |
-| `photo` | DG2 | + 4.2 s |
+| `signature` | DG7 | + 0.6 s |
+| `photo` | DG2 | + 1.8 s |
+
+Driving licence (ISO/IEC 18013, Algerian layout):
+
+| `Info` | File | Algerian licence |
+|---|---|---|
+| `documentNumber`, `names`, `dateOfBirth`, `dateOfIssue`, `dateOfExpiry`, `issuingCountry`, `issuingAuthority`, `licenceCategories` | DG1 | 0.4 s, unlock included |
+| `sex`, `placeOfBirth` | DG2 | + 0.13 s |
+| `nin` | DG3 | + 0.14 s |
+| `mrz`, `nationality`, `bloodGroup` | DG11 | + 0.28 s |
+| `otherDetails` (the Arabic fields of DG11 and the rest, by tag) | DG3 + DG11 | |
+| `signature` | DG5 | + 3.6 s |
+| `photo` | DG4 | + 10.4 s |
+
+The licence chip is slow (about 0.15 s per command) and refuses big reads,
+hence its slow pictures. `documentType` is known without reading anything.
 
 Ready-made sets: `Info.mrzData` (the default), `Info.personalDetails`,
 `Info.documentDetails`, `Info.allText`, `Info.everything`.
-
-Times were measured with short reads, before big reads existed: on chips
-and phones that take extended-length commands the reader now reads big
-files in 2 KB pieces, which should make the pictures faster.
 
 ### Checks
 
 | `Check` | What it proves | Cost |
 |---|---|---|
-| `chipGenuine` | The chip signs a random challenge with a key that cannot be copied out of it: it is the original chip (Active Authentication, DG15). | + 0.2 s |
-| `dataAuthentic` | The values read match the hashes the issuer signed, and the signature is valid (passive authentication, EF.SOD). | + 0.4 s, then a background check |
+| `chipGenuine` | The chip signs a random challenge with a key that cannot be copied out of it: it is the original chip (Active Authentication, DG15). The Algerian licence has no such key (`notSupported`). | + 0.1 s on the ID card |
+| `dataAuthentic` | The values read match the hashes the issuer signed, and the signature is valid (passive authentication, EF.SOD). | + 0.2 s on the ID card, 1.3 s on the licence, then about 0.05 s of checking |
 
 Results are in `doc.security` as `CheckStatus` values (`passed`, `failed`,
 `notSupported`, `notChecked`), with the document signer's certificate.
@@ -120,7 +136,10 @@ to 1 for a progress bar, and `partial`: the values read so far, so you can
 show the name while the photo is still loading.
 
 If the card moves away, the reader waits for it and goes on where it
-stopped, until the timeout (30 s by default).
+stopped, until the timeout (30 s by default). Big files are read in 2 KB
+pieces when the phone and the chip take extended-length commands; a chip
+that refuses them gets 960-byte or short pieces, in the same connection,
+and the reader remembers that for the next reads of the document.
 
 ### Pictures
 
@@ -182,17 +201,19 @@ final reader = DocumentReader(transport: FakeNfc(FakeCard.demo()));
 final doc = await reader.read(demoKey, want: Info.everything);
 ```
 
-`FakeCard` simulates a chip, with BAC, secure messaging, big reads and
-Active Authentication. `FakeCard.demo()` is a made-up "SPECIMEN DEMO" ID
-card of the fictional state UTO, signed under `demoCountryCertificate`.
-Use it in widget tests, and to work on screens without a card.
+`FakeCard` simulates a chip, with BAC, secure messaging, big reads (or
+their refusal) and Active Authentication. `FakeCard.demo()` is a made-up
+"SPECIMEN DEMO" ID card of the fictional state UTO, signed under
+`demoCountryCertificate`; `FakeCard.demoLicence()` (key `demoLicenceKey`)
+is a made-up licence with the Algerian layout. Use them in widget tests,
+and to work on screens without a card.
 
 ## Status
 
 - Android only.
 - ID card: tested on a real Algerian card.
-- Driving licence: unlocks and reads (photo, signature, values by tag in
-  `otherDetails`); named fields are still to come.
+- Driving licence: tested on a real Algerian licence. The Arabic fields of
+  DG11 are in `otherDetails` by tag until their meaning is confirmed.
 - Passport: not tested yet. Chips that only accept PACE (the newer unlock)
   are not supported yet.
 

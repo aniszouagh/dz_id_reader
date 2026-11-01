@@ -20,13 +20,20 @@ abstract final class Sw {
   static const insNotSupported = 0x6D00;
   static const claNotSupported = 0x6E00;
 
-  static String name(int sw) => sw.toRadixString(16).padLeft(4, '0').toUpperCase();
+  static String name(int sw) =>
+      sw.toRadixString(16).padLeft(4, '0').toUpperCase();
 }
 
 /// An ISO/IEC 7816-4 command.
 class CommandApdu {
-  const CommandApdu(this.cla, this.ins, this.p1, this.p2,
-      {this.data, this.ne = 0});
+  const CommandApdu(
+    this.cla,
+    this.ins,
+    this.p1,
+    this.p2, {
+    this.data,
+    this.ne = 0,
+  });
 
   final int cla, ins, p1, p2;
   final Uint8List? data;
@@ -71,7 +78,9 @@ class ResponseApdu {
     if (raw.length < 2) throw const FormatException('Response without status');
     final n = raw.length - 2;
     return ResponseApdu(
-        Uint8List.sublistView(raw, 0, n), raw[n] << 8 | raw[n + 1]);
+      Uint8List.sublistView(raw, 0, n),
+      raw[n] << 8 | raw[n + 1],
+    );
   }
 
   final Uint8List data;

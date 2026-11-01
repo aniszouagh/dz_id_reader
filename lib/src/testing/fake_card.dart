@@ -12,10 +12,14 @@ import '../document.dart';
 import '../lds/mrz_text.dart';
 import '../nfc/transport.dart';
 import 'demo_files.dart';
+import 'demo_licence.dart';
 
 /// The key of [FakeCard.demo].
 final demoKey = AccessKey(
-    documentNumber: demoNumber, dateOfBirth: demoBirth, dateOfExpiry: demoExpiry);
+  documentNumber: demoNumber,
+  dateOfBirth: demoBirth,
+  dateOfExpiry: demoExpiry,
+);
 
 /// A document chip simulated in Dart. It answers the reader's commands the
 /// way a real chip does: BAC, secure messaging, READ BINARY by short file
@@ -33,28 +37,45 @@ class FakeCard {
     this.aaPrivateExponent,
     this.extendedLength = true,
     this.maxResponse = 0x10000,
+    this.stuckAfterRefusal = false,
     Random? random,
-  })  : _key = BacKey(key.documentNumber, toYYMMDD(key.dateOfBirth),
-            toYYMMDD(key.dateOfExpiry)),
-        _files = Map.unmodifiable(files),
-        _aid = (type == DocumentType.drivingLicence
-                ? ChipApp.licence
-                : ChipApp.icao)
-            .aid,
-        _random = random ?? Random();
+  }) : _key = BacKey(
+         key.documentNumber,
+         toYYMMDD(key.dateOfBirth),
+         toYYMMDD(key.dateOfExpiry),
+       ),
+       _files = Map.unmodifiable(files),
+       _aid =
+           (type == DocumentType.drivingLicence
+                   ? ChipApp.licence
+                   : ChipApp.icao)
+               .aid,
+       _random = random ?? Random();
 
   /// A made-up ID card of the fictional state UTO ("SPECIMEN DEMO"), with
   /// photo, signature, details, Active Authentication and an EF.SOD signed
   /// under [demoCountryCertificate]. Unlocks with [demoKey].
-  factory FakeCard.demo({bool extendedLength = true, int maxResponse = 0x10000}) =>
-      FakeCard(
-        key: demoKey,
-        files: demoFiles,
-        aaModulus: demoAaModulus,
-        aaPrivateExponent: demoAaPrivateExponent,
-        extendedLength: extendedLength,
-        maxResponse: maxResponse,
-      );
+  factory FakeCard.demo({
+    bool extendedLength = true,
+    int maxResponse = 0x10000,
+    bool stuckAfterRefusal = false,
+  }) => FakeCard(
+    key: demoKey,
+    files: demoFiles,
+    aaModulus: demoAaModulus,
+    aaPrivateExponent: demoAaPrivateExponent,
+    extendedLength: extendedLength,
+    maxResponse: maxResponse,
+    stuckAfterRefusal: stuckAfterRefusal,
+  );
+
+  /// A made-up driving licence with the layout of the Algerian one.
+  /// Unlocks with [demoLicenceKey].
+  factory FakeCard.demoLicence() => FakeCard(
+    key: demoLicenceKey,
+    files: demoLicenceFiles(),
+    type: DocumentType.drivingLicence,
+  );
 
   final BacKey _key;
   final Map<int, Uint8List> _files;
@@ -63,11 +84,18 @@ class FakeCard {
   final BigInt? aaModulus;
   final BigInt? aaPrivateExponent;
 
-  /// Whether the chip takes extended-length commands.
+  /// Whether the chip takes extended-length commands. One that does not
+  /// answers them in clear with 6700 and drops its session, like real
+  /// chips do.
   final bool extendedLength;
 
-  /// The most data the chip returns in one answer.
+  /// The most data the chip returns in one answer. Asked for more, it
+  /// answers 6700 (protected) and forgets its current file.
   final int maxResponse;
+
+  /// After refusing an extended-length command, the chip answers nothing
+  /// but 6985 until it is powered again (the next connection).
+  final bool stuckAfterRefusal;
 
   /// What reached the chip, one short line per command, like
   /// `READ DG2 @223 2048`. Tests use it to check what was read.
@@ -82,8 +110,10 @@ class FakeCard {
   TripleDes? _enc, _mac;
   Uint8List? _ssc;
   int? _current;
+  bool _stuck = false;
 
   void _powerOn() {
+    _stuck = false;
     _selected = false;
     _rndIc = null;
     _enc = _mac = null;
@@ -92,7 +122,15 @@ class FakeCard {
   }
 
   Uint8List _answer(Uint8List apdu) {
+    if (_stuck) return _sw(Sw.conditionsNotSatisfied);
     final c = _Parsed(apdu);
+    if (c.extended && !extendedLength) {
+      log.add('REFUSED extended command');
+      _enc = _mac = null;
+      _current = null;
+      _stuck = stuckAfterRefusal;
+      return _sw(Sw.wrongLength);
+    }
     if (c.cla & 0x0C == 0x0C) {
       if (_enc == null) return _sw(Sw.smDataMissing);
       return _protected(c);
@@ -182,8 +220,9 @@ class FakeCard {
   }
 
   (Uint8List, int) _run(_Parsed c, Uint8List data, int ne) {
-    if ((ne > 256 && !extendedLength) || ne > maxResponse) {
+    if (ne > maxResponse) {
       log.add('REFUSED ne=$ne');
+      _current = null;
       return (Uint8List(0), Sw.wrongLength);
     }
     switch (c.ins) {
@@ -208,8 +247,10 @@ class FakeCard {
       case 0xA4 when c.p1 == 0x02 && data.length == 2 && data[0] == 0x01:
         _current = data[1];
         log.add('SELECT FILE ${_name(data[1])}');
-        return (Uint8List(0),
-            _files.containsKey(data[1]) ? Sw.ok : Sw.fileNotFound);
+        return (
+          Uint8List(0),
+          _files.containsKey(data[1]) ? Sw.ok : Sw.fileNotFound,
+        );
     }
     return (Uint8List(0), Sw.insNotSupported);
   }
@@ -255,10 +296,10 @@ class FakeCard {
       Uint8List.fromList([for (var i = 0; i < n; i++) _random.nextInt(256)]);
 
   static String _name(int sfi) => switch (sfi) {
-        0x1D => 'EF.SOD',
-        0x1E => 'EF.COM',
-        _ => 'DG$sfi',
-      };
+    0x1D => 'EF.SOD',
+    0x1E => 'EF.COM',
+    _ => 'DG$sfi',
+  };
 
   static Uint8List _sw(int sw) => _swBytes(sw);
   static Uint8List _swBytes(int sw) => Uint8List.fromList([sw >> 8, sw & 0xFF]);
@@ -267,13 +308,23 @@ class FakeCard {
     final n = value.length;
     return Uint8List.fromList([
       tag,
-      if (n < 0x80) n else if (n < 0x100) ...[0x81, n] else ...[0x82, n >> 8, n & 0xFF],
+      if (n < 0x80)
+        n
+      else if (n < 0x100) ...[
+        0x81,
+        n,
+      ] else ...[
+        0x82,
+        n >> 8,
+        n & 0xFF,
+      ],
       ...value,
     ]);
   }
 
   static Map<int, ({Uint8List whole, Uint8List value})> _dataObjects(
-      Uint8List body) {
+    Uint8List body,
+  ) {
     final out = <int, ({Uint8List whole, Uint8List value})>{};
     for (var i = 0; i < body.length;) {
       final start = i;
@@ -320,21 +371,26 @@ class _Parsed {
     } else if (a.length > 5) {
       data = Uint8List.sublistView(a, 5, 5 + a[4]);
     }
-    return _Parsed._(a[0], a[1], a[2], a[3], data);
+    return _Parsed._(a[0], a[1], a[2], a[3], data, a.length > 5 && a[4] == 0);
   }
 
-  _Parsed._(this.cla, this.ins, this.p1, this.p2, this.data);
+  _Parsed._(this.cla, this.ins, this.p1, this.p2, this.data, this.extended);
 
   final int cla, ins, p1, p2;
   final Uint8List data;
+
+  /// Extended-length format.
+  final bool extended;
 }
 
 /// An [NfcTransport] with a [FakeCard] on it, or with no card.
 class FakeNfc implements NfcTransport {
-  FakeNfc(this.card,
-      {this.nfcState = NfcState.on,
-      this.phoneExtendedLength = true,
-      this.commandDelay = Duration.zero});
+  FakeNfc(
+    this.card, {
+    this.nfcState = NfcState.on,
+    this.phoneExtendedLength = true,
+    this.commandDelay = Duration.zero,
+  });
 
   final FakeCard? card;
   NfcState nfcState;
@@ -357,8 +413,10 @@ class FakeNfc implements NfcTransport {
   Future<void> hold(bool on) async => holding = on;
 
   @override
-  Future<CardLink> connect(
-      {required Duration timeout, required Duration commandTimeout}) async {
+  Future<CardLink> connect({
+    required Duration timeout,
+    required Duration commandTimeout,
+  }) async {
     final card = this.card;
     if (card == null) {
       final cancel = _cancel = Completer<void>();

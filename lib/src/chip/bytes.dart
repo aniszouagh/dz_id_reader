@@ -8,10 +8,8 @@ Uint8List hexToBytes(String hex) {
   ]);
 }
 
-String toHex(Iterable<int> bytes) => bytes
-    .map((b) => b.toRadixString(16).padLeft(2, '0'))
-    .join()
-    .toUpperCase();
+String toHex(Iterable<int> bytes) =>
+    bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join().toUpperCase();
 
 Uint8List concat(List<List<int>> parts) {
   final out = BytesBuilder(copy: false);

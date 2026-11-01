@@ -19,9 +19,9 @@ class SecureMessagingException implements Exception {
 /// sequence counter (SSC) makes each message unique.
 class SecureMessaging {
   SecureMessaging(Uint8List ksEnc, Uint8List ksMac, Uint8List ssc)
-      : _enc = TripleDes(ksEnc),
-        _mac = TripleDes(ksMac),
-        _ssc = Uint8List.fromList(ssc);
+    : _enc = TripleDes(ksEnc),
+      _mac = TripleDes(ksMac),
+      _ssc = Uint8List.fromList(ssc);
 
   final TripleDes _enc;
   final TripleDes _mac;
@@ -69,9 +69,14 @@ class SecureMessaging {
     _incrementSsc();
     final mac = _mac.mac(pad([..._ssc, ...pad(header), ...dos]));
     final body = concat([dos, _tlv(0x8E, mac)]);
-    return CommandApdu(cla, command.ins, command.p1, command.p2,
-            data: body, ne: command.isExtended ? 65536 : 256)
-        .encode();
+    return CommandApdu(
+      cla,
+      command.ins,
+      command.p1,
+      command.p2,
+      data: body,
+      ne: command.isExtended ? 65536 : 256,
+    ).encode();
   }
 
   /// Checks and decrypts a protected response.
@@ -144,8 +149,8 @@ class SecureMessaging {
     final length = n < 0x80
         ? [n]
         : n < 0x100
-            ? [0x81, n]
-            : [0x82, n >> 8, n & 0xFF];
+        ? [0x81, n]
+        : [0x82, n >> 8, n & 0xFF];
     return Uint8List.fromList([tag, ...length, ...value]);
   }
 }

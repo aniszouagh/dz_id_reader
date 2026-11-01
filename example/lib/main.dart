@@ -39,7 +39,7 @@ class App extends StatelessWidget {
 /// Groups of values the user can pick, mapped to what the package reads.
 enum Part {
   main('Main data', {...Info.mrzData, Info.mrz, Info.licenceCategories}),
-  personal('Personal details', Info.personalDetails),
+  personal('Personal details', {...Info.personalDetails, Info.bloodGroup}),
   document('Document details', Info.documentDetails),
   other('Other values', {Info.otherDetails}),
   signature('Signature', {Info.signature}),
@@ -118,19 +118,20 @@ class _HomePageState extends State<HomePage> {
     if (key != null) await _read(key, _reader);
   }
 
-  /// The made-up demo card: works on any phone, no NFC needed.
-  Future<void> _readDemo() async {
+  /// The made-up demo cards: they work on any phone, no NFC needed.
+  Future<void> _readDemo({required bool licence}) async {
     FocusScope.of(context).unfocus();
-    _fill(demoKey);
-    _scanInfo = 'Demo card: made-up data, no NFC';
+    final key = licence ? demoLicenceKey : demoKey;
+    _fill(key);
+    _scanInfo = 'Demo ${licence ? 'licence' : 'ID card'}: made-up data, no NFC';
     final demo = DocumentReader(
       transport: FakeNfc(
-        FakeCard.demo(),
+        licence ? FakeCard.demoLicence() : FakeCard.demo(),
         commandDelay: const Duration(milliseconds: 25),
       ),
       trustedCountryCertificates: [demoCountryCertificate],
     );
-    await _read(demoKey, demo);
+    await _read(key, demo);
   }
 
   AccessKey? _keyFromForm() {
@@ -305,10 +306,27 @@ class _HomePageState extends State<HomePage> {
                     icon: const Icon(Icons.nfc),
                     label: const Text('Read chip'),
                   ),
-                  TextButton.icon(
-                    onPressed: _reading ? null : _readDemo,
-                    icon: const Icon(Icons.science_outlined),
-                    label: const Text('Try the demo card (no NFC)'),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextButton.icon(
+                          onPressed: _reading
+                              ? null
+                              : () => _readDemo(licence: false),
+                          icon: const Icon(Icons.science_outlined),
+                          label: const Text('Demo ID card'),
+                        ),
+                      ),
+                      Expanded(
+                        child: TextButton.icon(
+                          onPressed: _reading
+                              ? null
+                              : () => _readDemo(licence: true),
+                          icon: const Icon(Icons.science_outlined),
+                          label: const Text('Demo licence'),
+                        ),
+                      ),
+                    ],
                   ),
                   Column(
                     key: _resultsKey,

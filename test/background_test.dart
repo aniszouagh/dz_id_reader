@@ -8,8 +8,7 @@ import 'package:dz_id_reader/src/document.dart';
 import 'package:dz_id_reader/src/images.dart';
 import 'package:dz_id_reader/src/security.dart';
 
-Uint8List fixture(String name) =>
-    File('test/fixtures/$name').readAsBytesSync();
+Uint8List fixture(String name) => File('test/fixtures/$name').readAsBytesSync();
 
 /// Shaped like a page's method: another closure in it captures `this` (as
 /// setState callbacks do), so the scope's shared context holds the object
@@ -38,18 +37,22 @@ class _PageLike {
 void main() {
   test('checks run on an isolate when called from a page', () async {
     final page = _PageLike();
-    await page.afterRead(fixture('sod_rsa.bin'),
-        {1: fixture('dg1.bin'), 2: fixture('dg2.bin')});
+    await page.afterRead(fixture('sod_rsa.bin'), {
+      1: fixture('dg1.bin'),
+      2: fixture('dg2.bin'),
+    });
     expect(page.result!.dataUnchanged, CheckStatus.passed);
     expect(page.result!.issuerSignature, CheckStatus.passed);
   });
 
-  testWidgets('decodes the JPEG 2000 face and the JPEG signature',
-      (tester) async {
+  testWidgets('decodes the JPEG 2000 face and the JPEG signature', (
+    tester,
+  ) async {
     final face = findImages(fixture('image_dg2.bin')).single;
     final sign = findImages(fixture('image_dg7.bin')).single;
     final images = (await tester.runAsync(
-        () => Future.wait([face.decode(), sign.decode()])))!;
+      () => Future.wait([face.decode(), sign.decode()]),
+    ))!;
     expect([for (final i in images) (i.width, i.height)], [(40, 30), (40, 30)]);
     for (final i in images) {
       i.dispose();

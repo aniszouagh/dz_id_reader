@@ -12,8 +12,8 @@ int checkDigit(String value) {
     final v = c >= 0x30 && c <= 0x39
         ? c - 0x30
         : c >= 0x41 && c <= 0x5A
-            ? c - 0x41 + 10
-            : 0;
+        ? c - 0x41 + 10
+        : 0;
     sum += v * weights[i % 3];
   }
   return sum % 10;
@@ -64,9 +64,10 @@ class MrzFields {
           birth: at(30, 36),
           sex: at(37, 38),
           expiry: at(38, 44),
-          optionalData: [_clean(optional1), _clean(at(48, 59))]
-              .where((o) => o.isNotEmpty)
-              .join(' '),
+          optionalData: [
+            _clean(optional1),
+            _clean(at(48, 59)),
+          ].where((o) => o.isNotEmpty).join(' '),
         );
       case 72 || 88: // TD2, TD3
         final width = s.length ~/ 2;

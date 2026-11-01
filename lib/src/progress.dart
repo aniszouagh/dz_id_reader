@@ -20,8 +20,12 @@ enum ReadStage {
 
 /// Sent while a read runs, for your own progress screen.
 class ReadProgress {
-  const ReadProgress(this.stage,
-      {this.attempt = 1, this.fraction = 0, this.partial});
+  const ReadProgress(
+    this.stage, {
+    this.attempt = 1,
+    this.fraction = 0,
+    this.partial,
+  });
 
   final ReadStage stage;
 

@@ -51,8 +51,8 @@ List<(String, Uint8List)> tlvLeafBytes(Uint8List data) {
 /// printable, otherwise as hex (dates in ISO 18013 are BCD, so they read
 /// fine as hex).
 List<(String, String)> tlvLeaves(Uint8List data) => [
-      for (final (tag, value) in tlvLeafBytes(data)) (tag, printable(value)),
-    ];
+  for (final (tag, value) in tlvLeafBytes(data)) (tag, printable(value)),
+];
 
 /// [value] as text when it is printable UTF-8, otherwise as hex.
 String printable(Uint8List value) {

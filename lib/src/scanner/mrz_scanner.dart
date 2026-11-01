@@ -27,8 +27,11 @@ class MrzScanResult {
 
 /// Which values are found so far, for live hints on your page.
 class MrzScanProgress {
-  const MrzScanProgress(
-      {this.documentNumber = false, this.dates = false, this.frames = 0});
+  const MrzScanProgress({
+    this.documentNumber = false,
+    this.dates = false,
+    this.frames = 0,
+  });
 
   final bool documentNumber;
 
@@ -61,15 +64,17 @@ class MrzScanner {
     const side = 64;
     final watch = Stopwatch()..start();
     try {
-      await _recognizer.processImage(InputImage.fromBytes(
-        bytes: Uint8List(side * side * 3 ~/ 2),
-        metadata: InputImageMetadata(
-          size: const Size(side * 1.0, side * 1.0),
-          rotation: InputImageRotation.rotation0deg,
-          format: InputImageFormat.nv21,
-          bytesPerRow: side,
+      await _recognizer.processImage(
+        InputImage.fromBytes(
+          bytes: Uint8List(side * side * 3 ~/ 2),
+          metadata: InputImageMetadata(
+            size: const Size(side * 1.0, side * 1.0),
+            rotation: InputImageRotation.rotation0deg,
+            format: InputImageFormat.nv21,
+            bytesPerRow: side,
+          ),
         ),
-      ));
+      );
       _log.info('OCR warm-up took ${watch.elapsedMilliseconds} ms');
     } on Object catch (e) {
       _log.warning('OCR warm-up failed: $e');
@@ -92,7 +97,11 @@ class MrzScanner {
     final cardHeight = 0.9 * portrait / (85.6 / 54);
     final half = cardHeight / 2 + 0.06;
     return Rect.fromLTRB(
-        0, (0.5 - half).clamp(0.0, 1.0), 1, (0.5 + half).clamp(0.0, 1.0));
+      0,
+      (0.5 - half).clamp(0.0, 1.0),
+      1,
+      (0.5 + half).clamp(0.0, 1.0),
+    );
   }
 
   var _finder = MrzFinder();
@@ -184,28 +193,37 @@ class MrzScanner {
         final upright = rotation % 180 == 0
             ? defaultCardArea(width * 1.0, height * 1.0)
             : defaultCardArea(height * 1.0, width * 1.0);
-        final cropped = cropNv21(bytes, width, height,
-            uprightToRaw(cardArea ?? upright, rotation));
+        final cropped = cropNv21(
+          bytes,
+          width,
+          height,
+          uprightToRaw(cardArea ?? upright, rotation),
+        );
         frame = cropped.bytes;
         w = rowBytes = cropped.width;
         h = cropped.height;
       }
-      final text = await _recognizer.processImage(InputImage.fromBytes(
-        bytes: frame,
-        metadata: InputImageMetadata(
-          size: Size(w * 1.0, h * 1.0),
-          rotation: InputImageRotationValue.fromRawValue(rotation) ??
-              InputImageRotation.rotation0deg,
-          format: InputImageFormat.nv21,
-          bytesPerRow: rowBytes,
+      final text = await _recognizer.processImage(
+        InputImage.fromBytes(
+          bytes: frame,
+          metadata: InputImageMetadata(
+            size: Size(w * 1.0, h * 1.0),
+            rotation:
+                InputImageRotationValue.fromRawValue(rotation) ??
+                InputImageRotation.rotation0deg,
+            format: InputImageFormat.nv21,
+            bytesPerRow: rowBytes,
+          ),
         ),
-      ));
+      );
       final lines = [
         for (final block in text.blocks)
           for (final line in block.lines) line.text,
       ];
-      _log.fine('Frame $_frames: ${_clock.elapsedMilliseconds - started} ms, '
-          '${whole ? 'whole' : 'card area'} ${w}x$h, ${lines.length} lines');
+      _log.fine(
+        'Frame $_frames: ${_clock.elapsedMilliseconds - started} ms, '
+        '${whole ? 'whole' : 'card area'} ${w}x$h, ${lines.length} lines',
+      );
       return _addLines(lines);
     } finally {
       _busy = false;
@@ -239,7 +257,10 @@ class MrzScanner {
     if (key == null) return null;
     _clock.stop();
     _log.info('MRZ found in ${_clock.elapsedMilliseconds} ms, $_frames frames');
-    return _result =
-        MrzScanResult(key, elapsed: _clock.elapsed, frames: _frames);
+    return _result = MrzScanResult(
+      key,
+      elapsed: _clock.elapsed,
+      frames: _frames,
+    );
   }
 }

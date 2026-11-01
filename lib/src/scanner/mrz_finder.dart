@@ -21,24 +21,32 @@ class MrzFinder {
   // digits, so a document number needs at least 5 real digits; that keeps
   // the names line from being read as line 1.
   static final _td1Line1 = RegExp(
-      '^.{0,2}?([A-Z])[A-Z<][A-Z<]{3}([A-Z0-9<]{9})([$_digitLike])');
-  static final _td1Line2 = RegExp('^.{0,2}?([$_digitLike]{6})([$_digitLike])'
-      '([MF<])([$_digitLike]{6})([$_digitLike])[A-Z<]{3}');
+    '^.{0,2}?([A-Z])[A-Z<][A-Z<]{3}([A-Z0-9<]{9})([$_digitLike])',
+  );
+  static final _td1Line2 = RegExp(
+    '^.{0,2}?([$_digitLike]{6})([$_digitLike])'
+    '([MF<])([$_digitLike]{6})([$_digitLike])[A-Z<]{3}',
+  );
   static final _td3Line2 = RegExp(
-      '^.{0,2}?([A-Z0-9<]{9})([$_digitLike])[A-Z<]{3}'
-      '([$_digitLike]{6})([$_digitLike])([MF<])([$_digitLike]{6})([$_digitLike])');
+    '^.{0,2}?([A-Z0-9<]{9})([$_digitLike])[A-Z<]{3}'
+    '([$_digitLike]{6})([$_digitLike])([MF<])([$_digitLike]{6})([$_digitLike])',
+  );
 
   // Whole lines, for the composite check digit. The optional data fields
   // are captured loosely because OCR often gets the number of `<` wrong.
   static final _td1Full1 = RegExp(
-      '^.{0,2}?([A-Z])[A-Z<][A-Z<]{3}([A-Z0-9<]{9})([$_digitLike])([A-Z0-9<]*)\$');
-  static final _td1Full2 = RegExp('^.{0,2}?([$_digitLike]{6})([$_digitLike])'
-      '[MF<]([$_digitLike]{6})([$_digitLike])[A-Z<]{3}([A-Z0-9<]*)'
-      '([$_digitLike])\$');
+    '^.{0,2}?([A-Z])[A-Z<][A-Z<]{3}([A-Z0-9<]{9})([$_digitLike])([A-Z0-9<]*)\$',
+  );
+  static final _td1Full2 = RegExp(
+    '^.{0,2}?([$_digitLike]{6})([$_digitLike])'
+    '[MF<]([$_digitLike]{6})([$_digitLike])[A-Z<]{3}([A-Z0-9<]*)'
+    '([$_digitLike])\$',
+  );
   static final _td3Full2 = RegExp(
-      '^.{0,2}?([A-Z0-9<]{9})([$_digitLike])[A-Z<]{3}([$_digitLike]{6})'
-      '([$_digitLike])[MF<]([$_digitLike]{6})([$_digitLike])([A-Z0-9<]*)'
-      '([$_digitLike<])([$_digitLike])\$');
+    '^.{0,2}?([A-Z0-9<]{9})([$_digitLike])[A-Z<]{3}([$_digitLike]{6})'
+    '([$_digitLike])[MF<]([$_digitLike]{6})([$_digitLike])([A-Z0-9<]*)'
+    '([$_digitLike<])([$_digitLike])\$',
+  );
 
   final _seenDocNumbers = <String, int>{};
   final _seenDates = <String, int>{};
@@ -55,17 +63,18 @@ class MrzFinder {
           documentNumber: _docNumber!,
           dateOfBirth: _dates!.$1,
           dateOfExpiry: _dates!.$2,
-          documentType: _type)
+          documentType: _type,
+        )
       : null;
 
   /// From the document code: I (ID card), P (passport), D (driving
   /// licence).
   static DocumentType _typeOf(String code) => switch (code) {
-        'I' || 'A' || 'C' => DocumentType.idCard,
-        'P' => DocumentType.passport,
-        'D' => DocumentType.drivingLicence,
-        _ => DocumentType.other,
-      };
+    'I' || 'A' || 'C' => DocumentType.idCard,
+    'P' => DocumentType.passport,
+    'D' => DocumentType.drivingLicence,
+    _ => DocumentType.other,
+  };
 
   /// Feeds the lines ML Kit recognized in one camera frame.
   void addFrame(Iterable<String> rawLines) {
@@ -123,7 +132,8 @@ class MrzFinder {
       final dates = _checkedDates(pp[3]!, pp[4]!, pp[5]!, pp[6]!);
       final personal = _fixedFiller(pp[7]!, 14);
       if (docField == null || dates == null || personal == null) continue;
-      final covered = '$docField${_digit(pp[2]!)}${dates.substring(0, 6)}'
+      final covered =
+          '$docField${_digit(pp[2]!)}${dates.substring(0, 6)}'
           '${_digit(pp[4]!)}${dates.substring(6)}${_digit(pp[6]!)}'
           '$personal${pp[8]}';
       if (_check(covered, _digit(pp[9]!))) {
@@ -142,7 +152,8 @@ class MrzFinder {
         final dates = _checkedDates(l2[1]!, l2[2]!, l2[3]!, l2[4]!);
         final optional2 = _fixedFiller(l2[5]!, 11);
         if (dates == null || optional2 == null) continue;
-        final covered = '$docField${_digit(l1[3]!)}$optional1'
+        final covered =
+            '$docField${_digit(l1[3]!)}$optional1'
             '${dates.substring(0, 6)}${_digit(l2[2]!)}'
             '${dates.substring(6)}${_digit(l2[4]!)}$optional2';
         if (_check(covered, _digit(l2[6]!))) {
@@ -178,9 +189,8 @@ class MrzFinder {
   /// is masked completely.
   static String shapeOf(String raw) {
     final line = normalize(raw);
-    String mask(String s) => s
-        .replaceAll(RegExp(r'\d'), '9')
-        .replaceAll(RegExp('[A-Z]'), 'A');
+    String mask(String s) =>
+        s.replaceAll(RegExp(r'\d'), '9').replaceAll(RegExp('[A-Z]'), 'A');
     if (RegExp(r'\d').allMatches(line).length < 5 || line.length <= 5) {
       return mask(line);
     }
@@ -211,7 +221,11 @@ class MrzFinder {
 
   /// Returns birth date + expiry date as 12 digits when both pass.
   static String? _checkedDates(
-      String dobRaw, String dobCheck, String doeRaw, String doeCheck) {
+    String dobRaw,
+    String dobCheck,
+    String doeRaw,
+    String doeCheck,
+  ) {
     final dob = _digits(dobRaw), doe = _digits(doeRaw);
     if (_check(dob, _digit(dobCheck)) &&
         _check(doe, _digit(doeCheck)) &&
@@ -223,8 +237,7 @@ class MrzFinder {
   }
 
   static bool _check(String value, String check) =>
-      RegExp(r'^\d$').hasMatch(check) &&
-      checkDigit(value) == int.parse(check);
+      RegExp(r'^\d$').hasMatch(check) && checkDigit(value) == int.parse(check);
 
   static const _toDigit = {
     'O': '0', 'Q': '0', 'D': '0', 'U': '0', 'I': '1', 'L': '1', //

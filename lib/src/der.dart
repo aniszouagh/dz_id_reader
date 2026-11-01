@@ -75,19 +75,21 @@ class Der {
   Uint8List get bits => Uint8List.sublistView(_bytes, valueStart + 1, end);
 
   String get text => switch (tag) {
-        0x0C => utf8.decode(value), // UTF8String
-        0x1E => String.fromCharCodes([
-            // BMPString: UTF-16 big-endian
-            for (var i = 0; i + 1 < value.length; i += 2)
-              value[i] << 8 | value[i + 1],
-          ]),
-        _ => latin1.decode(value),
-      };
+    0x0C => utf8.decode(value), // UTF8String
+    0x1E => String.fromCharCodes([
+      // BMPString: UTF-16 big-endian
+      for (var i = 0; i + 1 < value.length; i += 2)
+        value[i] << 8 | value[i + 1],
+    ]),
+    _ => latin1.decode(value),
+  };
 
   /// UTCTime (YYMMDDHHMMSSZ) or GeneralizedTime (YYYYMMDDHHMMSSZ).
   DateTime get time {
     final s = latin1.decode(value);
-    final full = tag == 0x18 ? s : '${int.parse(s.substring(0, 2)) < 50 ? '20' : '19'}$s';
+    final full = tag == 0x18
+        ? s
+        : '${int.parse(s.substring(0, 2)) < 50 ? '20' : '19'}$s';
     return DateTime.utc(
       int.parse(full.substring(0, 4)),
       int.parse(full.substring(4, 6)),

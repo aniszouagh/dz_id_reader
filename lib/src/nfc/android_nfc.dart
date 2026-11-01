@@ -23,8 +23,10 @@ class AndroidNfc implements NfcTransport {
   Future<void> hold(bool on) => _channel.invokeMethod('hold', on);
 
   @override
-  Future<CardLink> connect(
-      {required Duration timeout, required Duration commandTimeout}) async {
+  Future<CardLink> connect({
+    required Duration timeout,
+    required Duration commandTimeout,
+  }) async {
     try {
       final info = await _channel.invokeMapMethod<String, Object?>('connect', {
         'timeoutMs': timeout.inMilliseconds,
@@ -40,15 +42,14 @@ class AndroidNfc implements NfcTransport {
   Future<void> cancel() => _channel.invokeMethod('cancel');
 
   static Exception _error(PlatformException e) => switch (e.code) {
-        'timeout' => const NoCardException(),
-        'cancelled' => const ConnectCancelledException(),
-        'off' => const NfcUnavailableException(NfcState.off),
-        'notSupported' => const NfcUnavailableException(NfcState.notSupported),
-        'tagLost' => const CardLostException(lost: true),
-        'io' || 'notConnected' =>
-          CardLostException(lost: false, detail: e.message),
-        _ => e,
-      };
+    'timeout' => const NoCardException(),
+    'cancelled' => const ConnectCancelledException(),
+    'off' => const NfcUnavailableException(NfcState.off),
+    'notSupported' => const NfcUnavailableException(NfcState.notSupported),
+    'tagLost' => const CardLostException(lost: true),
+    'io' || 'notConnected' => CardLostException(lost: false, detail: e.message),
+    _ => e,
+  };
 }
 
 class _AndroidCard implements CardLink {
@@ -60,8 +61,10 @@ class _AndroidCard implements CardLink {
   @override
   Future<Uint8List> transceive(Uint8List command) async {
     try {
-      return (await AndroidNfc._channel
-          .invokeMethod<Uint8List>('transceive', command))!;
+      return (await AndroidNfc._channel.invokeMethod<Uint8List>(
+        'transceive',
+        command,
+      ))!;
     } on PlatformException catch (e) {
       throw AndroidNfc._error(e);
     }

@@ -9,6 +9,11 @@
 /// - DG7 (about 1.5 s): [signature];
 /// - DG2 (about 4 s): [photo].
 ///
+/// On the driving licence (ISO/IEC 18013): DG1 for the names, dates,
+/// issuing country and authority, number and categories; DG2 for sex and
+/// place of birth; DG3 for the NIN; DG11 for the MRZ, nationality and
+/// blood group; DG5 the signature; DG4 the photo.
+///
 /// [otherDetails] gives the values of those files that have no field of
 /// their own, by tag.
 enum Info {
@@ -39,6 +44,9 @@ enum Info {
 
   /// Driving licence categories (B, C…).
   licenceCategories,
+
+  /// On the driving licence.
+  bloodGroup,
 
   /// Values with no field of their own, by file and tag.
   otherDetails,
@@ -76,6 +84,7 @@ enum Info {
     ...personalDetails,
     ...documentDetails,
     licenceCategories,
+    bloodGroup,
     otherDetails,
   };
 

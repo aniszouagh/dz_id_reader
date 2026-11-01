@@ -87,7 +87,8 @@ Uint8List deriveKey(List<int> seed, int counter) {
 }
 
 /// SHA-1 of [data], the hash BAC uses for its key seed.
-Uint8List sha1Of(List<int> data) => Uint8List.fromList(sha1.convert(data).bytes);
+Uint8List sha1Of(List<int> data) =>
+    Uint8List.fromList(sha1.convert(data).bytes);
 
 /// [a] XOR [b], both of the same length.
 Uint8List xorBytes(List<int> a, List<int> b) =>

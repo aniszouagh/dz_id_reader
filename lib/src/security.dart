@@ -47,9 +47,9 @@ bool _same(List<int> a, List<int> b) {
 /// A SubjectPublicKeyInfo: the public key in a certificate or in DG15.
 class PublicKey {
   PublicKey.parse(Der spki)
-      : algorithm = spki[0][0].oid,
-        params = spki[0].children.length > 1 ? spki[0][1] : null,
-        keyBits = spki[1].bits;
+    : algorithm = spki[0][0].oid,
+      params = spki[0].children.length > 1 ? spki[0][1] : null,
+      keyBits = spki[1].bits;
 
   static const rsaOid = '1.2.840.113549.1.1.1';
   static const ecOid = '1.2.840.10045.2.1';
@@ -77,11 +77,18 @@ class PublicKey {
     // Explicit parameters, common in passport certificates: version,
     // fieldID {prime-field, p}, curve {a, b}, base point, order, cofactor.
     final items = p.children;
-    final curve = fp.ECCurve(items[1][1].integer,
-        bytesToBigInt(items[2][0].value), bytesToBigInt(items[2][1].value));
-    return pc.ECDomainParametersImpl('explicit', curve,
-        curve.decodePoint(items[3].value)!, items[4].integer,
-        items.length > 5 ? items[5].integer : null);
+    final curve = fp.ECCurve(
+      items[1][1].integer,
+      bytesToBigInt(items[2][0].value),
+      bytesToBigInt(items[2][1].value),
+    );
+    return pc.ECDomainParametersImpl(
+      'explicit',
+      curve,
+      curve.decodePoint(items[3].value)!,
+      items[4].integer,
+      items.length > 5 ? items[5].integer : null,
+    );
   }
 
   /// Length of a signature made with this key, in bytes.
@@ -92,8 +99,8 @@ class PublicKey {
   String get description => isRsa
       ? 'RSA ${rsa.$1.bitLength}-bit'
       : isEc
-          ? 'ECDSA ${ecParams.n.bitLength}-bit'
-          : algorithm;
+      ? 'ECDSA ${ecParams.n.bitLength}-bit'
+      : algorithm;
 }
 
 final _namedCurves = <String, pc.ECDomainParameters Function()>{
@@ -113,8 +120,7 @@ class Certificate {
   factory Certificate.parse(Der cert) {
     final tbs = cert[0].children;
     var i = tbs[0].tag == 0xA0 ? 1 : 0; // optional version
-    final serial = tbs[i++]
-        .value
+    final serial = tbs[i++].value
         .map((b) => b.toRadixString(16).padLeft(2, '0'))
         .join()
         .toUpperCase();
@@ -172,8 +178,13 @@ class Certificate {
   /// the algorithm is not supported here.
   bool? isSignedBy(Certificate issuerCert) {
     if (!_same(issuerDer, issuerCert.subjectDer)) return false;
-    return verifySignature(issuerCert.publicKey, signatureAlgorithm, 'SHA-256',
-        signed, signatureValue);
+    return verifySignature(
+      issuerCert.publicKey,
+      signatureAlgorithm,
+      'SHA-256',
+      signed,
+      signatureValue,
+    );
   }
 }
 
@@ -189,10 +200,10 @@ const _nameParts = {
 };
 
 String _name(Der name) => [
-      for (final rdn in name.children)
-        for (final part in rdn.children)
-          '${_nameParts[part[0].oid] ?? part[0].oid}=${part[1].text}',
-    ].join(', ');
+  for (final rdn in name.children)
+    for (final part in rdn.children)
+      '${_nameParts[part[0].oid] ?? part[0].oid}=${part[1].text}',
+].join(', ');
 
 /// EF.SOD: the signed list of data group hashes (a CMS SignedData).
 class Sod {
@@ -217,7 +228,9 @@ class Sod {
     final lds = Der.parse(content).children; // LDSSecurityObject
     return Sod._(
       hashAlgorithm: _hashOids[lds[1][0].oid] ?? 'unknown',
-      hashes: {for (final h in lds[2].children) h[0].integer.toInt(): h[1].value},
+      hashes: {
+        for (final h in lds[2].children) h[0].integer.toInt(): h[1].value,
+      },
       signer: signer,
       digestAlgorithm: digestAlgorithm,
       attributes: attributes,
@@ -255,10 +268,10 @@ class Sod {
 
   /// For each data group read (by number), whether its hash matches.
   Map<int, bool> checkHashes(Map<int, Uint8List> files) => {
-        for (final MapEntry(key: dg, value: bytes) in files.entries)
-          if (hashes.containsKey(dg))
-            dg: _same(digest(hashAlgorithm, bytes), hashes[dg]!),
-      };
+    for (final MapEntry(key: dg, value: bytes) in files.entries)
+      if (hashes.containsKey(dg))
+        dg: _same(digest(hashAlgorithm, bytes), hashes[dg]!),
+  };
 
   /// Whether [signer] really signed the hashes. Null when there is no
   /// signer certificate or its algorithm is not supported here.
@@ -278,7 +291,12 @@ class Sod {
       signed = Uint8List.fromList(attrs.encoded)..[0] = 0x31;
     }
     return verifySignature(
-        key, signatureAlgorithm, digestAlgorithm, signed, signature);
+      key,
+      signatureAlgorithm,
+      digestAlgorithm,
+      signed,
+      signature,
+    );
   }
 
   static Der? _attribute(Der attrs, String oid) {
@@ -308,8 +326,13 @@ const _rsaPssOid = '1.2.840.113549.1.1.10';
 /// Checks [signature] over [data]. [algorithm] is the AlgorithmIdentifier;
 /// plain rsaEncryption uses [fallbackHash]. Null when the algorithm is not
 /// supported here.
-bool? verifySignature(PublicKey key, Der algorithm, String fallbackHash,
-    Uint8List data, Uint8List signature) {
+bool? verifySignature(
+  PublicKey key,
+  Der algorithm,
+  String fallbackHash,
+  Uint8List data,
+  Uint8List signature,
+) {
   final oid = algorithm[0].oid;
   if (key.isRsa) {
     final (n, e) = key.rsa;
@@ -339,7 +362,12 @@ bool? verifySignature(PublicKey key, Der algorithm, String fallbackHash,
 
 /// RSASSA-PKCS1-v1_5: 00 01 FF…FF 00 DigestInfo(hash).
 bool _rsaPkcs1(
-    BigInt n, BigInt e, String hash, Uint8List data, Uint8List signature) {
+  BigInt n,
+  BigInt e,
+  String hash,
+  Uint8List data,
+  Uint8List signature,
+) {
   final k = (n.bitLength + 7) ~/ 8;
   final em = bigIntToBytes(bytesToBigInt(signature).modPow(e, n), k);
   if (em[0] != 0 || em[1] != 1) return false;
@@ -355,8 +383,14 @@ bool _rsaPkcs1(
 }
 
 /// RSASSA-PSS (RFC 8017, 9.1.2), with MGF1 on the same hash.
-bool _rsaPss(BigInt n, BigInt e, String hash, int saltLength, Uint8List data,
-    Uint8List signature) {
+bool _rsaPss(
+  BigInt n,
+  BigInt e,
+  String hash,
+  int saltLength,
+  Uint8List data,
+  Uint8List signature,
+) {
   final emBits = n.bitLength - 1;
   final emLen = (emBits + 7) ~/ 8;
   final hLen = digest(hash, const []).length;
@@ -380,14 +414,24 @@ bool _rsaPss(BigInt n, BigInt e, String hash, int saltLength, Uint8List data,
   }
   if (db[padding] != 1) return false;
   final salt = db.sublist(dbLen - saltLength);
-  return _same(h, digest(hash, [...Uint8List(8), ...digest(hash, data), ...salt]));
+  return _same(
+    h,
+    digest(hash, [...Uint8List(8), ...digest(hash, data), ...salt]),
+  );
 }
 
 Uint8List _mgf1(String hash, List<int> seed, int length) {
   final out = BytesBuilder();
   for (var c = 0; out.length < length; c++) {
-    out.add(digest(hash,
-        [...seed, c >> 24 & 0xFF, c >> 16 & 0xFF, c >> 8 & 0xFF, c & 0xFF]));
+    out.add(
+      digest(hash, [
+        ...seed,
+        c >> 24 & 0xFF,
+        c >> 16 & 0xFF,
+        c >> 8 & 0xFF,
+        c & 0xFF,
+      ]),
+    );
   }
   return out.takeBytes().sublist(0, length);
 }
@@ -396,8 +440,12 @@ bool _ecdsa(PublicKey key, Uint8List hash, BigInt r, BigInt s) {
   final params = key.ecParams;
   final q = params.curve.decodePoint(key.keyBits);
   if (q == null) return false;
-  final signer = pc.ECDSASigner() // no digest: we pass the hash
-    ..init(false, pc.PublicKeyParameter<pc.ECPublicKey>(pc.ECPublicKey(q, params)));
+  final signer =
+      pc.ECDSASigner() // no digest: we pass the hash
+        ..init(
+          false,
+          pc.PublicKeyParameter<pc.ECPublicKey>(pc.ECPublicKey(q, params)),
+        );
   return signer.verifySignature(hash, pc.ECSignature(r, s));
 }
 
@@ -420,7 +468,10 @@ const _trailerHashes = {
 /// chips sign with ISO/IEC 9796-2 scheme 1 (6A ‖ M1 ‖ hash(M1 ‖ challenge)
 /// ‖ trailer), EC chips with plain ECDSA (r ‖ s). Null when unsupported.
 bool? verifyActiveAuthentication(
-    Uint8List dg15, Uint8List challenge, Uint8List signature) {
+  Uint8List dg15,
+  Uint8List challenge,
+  Uint8List signature,
+) {
   final key = publicKeyOfDg15(dg15);
   if (key.isRsa) {
     final (n, e) = key.rsa;
@@ -449,8 +500,7 @@ bool? verifyActiveAuthentication(
     final dStart = dEnd - digest(hash, const []).length;
     if (dStart < 1) return false;
     final m1 = f.sublist(1, dStart);
-    return _same(
-        f.sublist(dStart, dEnd), digest(hash, [...m1, ...challenge]));
+    return _same(f.sublist(dStart, dEnd), digest(hash, [...m1, ...challenge]));
   }
   if (key.isEc) {
     // The hash is named in DG14, which not every chip has; a valid
@@ -500,7 +550,11 @@ SecurityResult verifyDocument(VerifyInput input) {
         chipKey = publicKeyOfDg15(keyFile).description;
         final ok = signature == null
             ? false
-            : verifyActiveAuthentication(keyFile, input.aaChallenge!, signature);
+            : verifyActiveAuthentication(
+                keyFile,
+                input.aaChallenge!,
+                signature,
+              );
         chipGenuine = switch (ok) {
           true => CheckStatus.passed,
           false => CheckStatus.failed,
@@ -557,8 +611,8 @@ SecurityResult verifyDocument(VerifyInput input) {
     dataUnchanged: hashes.isEmpty
         ? CheckStatus.notSupported
         : changed.isEmpty
-            ? CheckStatus.passed
-            : CheckStatus.failed,
+        ? CheckStatus.passed
+        : CheckStatus.failed,
     changedFiles: changed,
     issuerSignature: switch (sod.signatureValid()) {
       true => CheckStatus.passed,

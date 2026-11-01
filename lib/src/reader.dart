@@ -31,8 +31,8 @@ class DocumentReader {
   DocumentReader({
     NfcTransport? transport,
     List<Uint8List> trustedCountryCertificates = const [],
-  })  : _nfc = transport ?? const AndroidNfc(),
-        _trusted = List.unmodifiable(trustedCountryCertificates);
+  }) : _nfc = transport ?? const AndroidNfc(),
+       _trusted = List.unmodifiable(trustedCountryCertificates);
 
   static final _log = Logger('dz_id_reader');
 
@@ -42,9 +42,9 @@ class DocumentReader {
   bool _busy = false;
   bool _cancelled = false;
 
-  /// Documents whose chip refused big reads, by number, so the next read
-  /// starts with short ones.
-  final _noBigReads = <String>{};
+  /// The big-read size that works for each document (by number; 0 when
+  /// its chip refuses big reads), so the next read starts with it.
+  final _bigReads = <String, int>{};
 
   Future<NfcState> nfcState() => _nfc.state();
 
@@ -86,9 +86,15 @@ class DocumentReader {
     _busy = true;
     _cancelled = false;
     try {
-      return await _ReadJob(this, key, want, checks, timeout, onProgress,
-              keepRawFiles)
-          .run();
+      return await _ReadJob(
+        this,
+        key,
+        want,
+        checks,
+        timeout,
+        onProgress,
+        keepRawFiles,
+      ).run();
     } finally {
       _busy = false;
     }
@@ -100,8 +106,15 @@ class DocumentReader {
 typedef _PlannedFile = ({int sfi, int guess});
 
 class _ReadJob {
-  _ReadJob(this.reader, this.key, this.want, this.checks, this.timeout,
-      this.onProgress, this.keepRawFiles);
+  _ReadJob(
+    this.reader,
+    this.key,
+    this.want,
+    this.checks,
+    this.timeout,
+    this.onProgress,
+    this.keepRawFiles,
+  );
 
   final DocumentReader reader;
   final AccessKey key;
@@ -119,7 +132,14 @@ class _ReadJob {
   final _missing = <int>{};
   List<_PlannedFile> _plan = const [];
   ChipApp? _app;
-  var _attempt = 0;
+
+  /// Connections made, and how many times the card was lost. Progress
+  /// shows attempt 1 + lost; a reconnection after a chip error does not
+  /// count, since the card did not move.
+  var _connections = 0;
+  var _lost = 0;
+  var _chipRetries = 0;
+  var _unlockedOnce = false;
   Uint8List? _challenge;
   Uint8List? _aaSignature;
   Duration? _aaTime;
@@ -130,14 +150,17 @@ class _ReadJob {
     final state = await reader._nfc.state();
     if (state == NfcState.notSupported) throw const NfcNotSupported();
     if (state == NfcState.off) throw const NfcOff();
-    final bac = BacKey(key.documentNumber, toYYMMDD(key.dateOfBirth),
-        toYYMMDD(key.dateOfExpiry));
+    final bac = BacKey(
+      key.documentNumber,
+      toYYMMDD(key.dateOfBirth),
+      toYYMMDD(key.dateOfExpiry),
+    );
     _clock.start();
-    var bigReads = !reader._noBigReads.contains(key.documentNumber);
+    var bigChunk = reader._bigReads[key.documentNumber] ?? ChipSession.bigChunk;
     late Duration waiting, onCard, unlock;
     late int commands;
     while (true) {
-      _attempt++;
+      _connections++;
       _checkCancelled();
       _emit(ReadStage.waitingForCard);
       final left = timeout - _clock.elapsed;
@@ -146,59 +169,64 @@ class _ReadJob {
       try {
         if (left <= Duration.zero) throw const NoCardException();
         link = await reader._nfc.connect(
-            timeout: left, commandTimeout: const Duration(seconds: 5));
+          timeout: left,
+          commandTimeout: const Duration(seconds: 5),
+        );
       } on NoCardException {
-        throw _attempt == 1 ? const NoCardFound() : const CardMoved();
+        throw _connections == 1 ? const NoCardFound() : const CardMoved();
       } on ConnectCancelledException {
         throw const ReadCancelled();
       } on NfcUnavailableException catch (e) {
-        throw e.state == NfcState.off ? const NfcOff() : const NfcNotSupported();
+        throw e.state == NfcState.off
+            ? const NfcOff()
+            : const NfcNotSupported();
       }
       waiting = waited.elapsed;
       final onThisCard = Stopwatch()..start();
-      final session = ChipSession(link, extendedReads: bigReads);
+      final session = ChipSession(link, bigChunk: bigChunk);
       try {
         _emit(ReadStage.unlocking);
-        final app = await session.selectApp(_app != null
-            ? [_app!]
-            : key.documentType == DocumentType.drivingLicence
-                ? const [ChipApp.licence, ChipApp.icao]
-                : const [ChipApp.icao, ChipApp.licence]);
+        final app = await session.selectApp(
+          _app != null
+              ? [_app!]
+              : key.documentType == DocumentType.drivingLicence
+              ? const [ChipApp.licence, ChipApp.icao]
+              : const [ChipApp.icao, ChipApp.licence],
+        );
         if (app == null) throw const UnsupportedDocument();
         if (_app == null) {
           _app = app;
           _plan = _planFor(app);
         }
-        try {
-          await session.unlock(bac);
-        } on AccessDeniedException {
-          throw const WrongKey();
-        }
+        await session.unlock(bac);
+        _unlockedOnce = true;
         unlock = onThisCard.elapsed;
-        _log.info('Attempt $_attempt: ${app.name} unlocked in '
-            '${unlock.inMilliseconds} ms');
+        _log.info(
+          'Connection $_connections: ${app.name} unlocked in '
+          '${unlock.inMilliseconds} ms',
+        );
         await _readFiles(session);
         onCard = onThisCard.elapsed;
         commands = session.commands;
-        bigReads = session.usesExtendedReads;
         break;
       } on CardLostException catch (e) {
-        _log.info('Attempt $_attempt: card lost after '
-            '${onThisCard.elapsedMilliseconds} ms ($e)');
+        _lost++;
+        _log.info(
+          'Connection $_connections: card lost after '
+          '${onThisCard.elapsedMilliseconds} ms ($e)',
+        );
+      } on AccessDeniedException catch (e) {
+        // Refused at the first unlock: the key is wrong. Refused later,
+        // after the same key worked: the chip is in a bad state.
+        if (!_unlockedOnce) throw const WrongKey();
+        _retryChipError(ChipStatusException(e.sw, 'unlock again'));
       } on SecureMessagingException catch (e) {
-        _log.info('Attempt $_attempt: secure messaging failed ($e)');
+        _retryChipError(ChipStatusException(Sw.smDataIncorrect, '$e'));
       } on ChipStatusException catch (e) {
-        // An SM error means the session broke (a glitch on the radio link):
-        // start again like after a lost card. Anything else is final.
-        if (e.sw != Sw.smDataMissing && e.sw != Sw.smDataIncorrect) {
-          throw ChipError(e.sw, e.during);
-        }
-        _log.info('Attempt $_attempt: $e');
+        _retryChipError(e);
       } finally {
-        if (session.extendedRefused) {
-          bigReads = false;
-          reader._noBigReads.add(key.documentNumber);
-        }
+        bigChunk = session.bigReadSize;
+        reader._bigReads[key.documentNumber] = bigChunk;
         try {
           await link.close();
         } on Object catch (e) {
@@ -233,13 +261,15 @@ class _ReadJob {
       files: Map.unmodifiable(_fileTimes),
       activeAuthentication: _aaTime,
       checks: checking.elapsed,
-      attempts: _attempt,
+      attempts: _connections,
       commands: commands,
-      bigReads: bigReads,
+      bigReads: bigChunk > 0,
     );
-    _log.info('Read done: ${onCard.inMilliseconds} ms on the card, '
-        '$commands commands, checks ${checking.elapsedMilliseconds} ms, '
-        'big reads ${bigReads ? 'on' : 'off'}');
+    _log.info(
+      'Read done: ${onCard.inMilliseconds} ms on the card, '
+      '$commands commands, checks ${checking.elapsedMilliseconds} ms, '
+      'big reads ${bigChunk > 0 ? '$bigChunk bytes' : 'off'}',
+    );
     final doc = _build(security: security, timings: timings)!;
     _emit(ReadStage.done, partial: doc);
     return doc;
@@ -250,8 +280,7 @@ class _ReadJob {
   List<_PlannedFile> _planFor(ChipApp app) {
     final text = <int>{
       for (final info in want) ...Files.textFor(app, info),
-    }.toList()
-      ..sort();
+    }.toList()..sort();
     return [
       for (final sfi in text) (sfi: sfi, guess: 150),
       if (checks.contains(Check.chipGenuine))
@@ -273,12 +302,15 @@ class _ReadJob {
         final watch = Stopwatch()..start();
         final name = Files.name(sfi);
         try {
-          _files[sfi] = await session.readFile(sfi, have: _partial[sfi],
-              onBytes: (soFar, total) {
-            _sizes[sfi] = total;
-            if (total > ChipSession.shortChunk) _partial[sfi] = soFar;
-            _emit(ReadStage.reading);
-          });
+          _files[sfi] = await session.readFile(
+            sfi,
+            have: _partial[sfi],
+            onBytes: (soFar, total) {
+              _sizes[sfi] = total;
+              if (total > ChipSession.shortChunk) _partial[sfi] = soFar;
+              _emit(ReadStage.reading);
+            },
+          );
           _sizes[sfi] = _files[sfi]!.length;
           if (app == ChipApp.licence) _logShapes(sfi);
         } on FileMissingException {
@@ -286,16 +318,23 @@ class _ReadJob {
         } on FileLockedException {
           _missing.add(sfi);
         } finally {
-          _fileTimes[name] = (_fileTimes[name] ?? Duration.zero) + watch.elapsed;
+          _fileTimes[name] =
+              (_fileTimes[name] ?? Duration.zero) + watch.elapsed;
           if (_files.containsKey(sfi)) _partial.remove(sfi);
         }
-        _log.info('$name: ${_files.containsKey(sfi) ? '${_files[sfi]!.length} bytes' : 'not on the chip'} '
-            'in ${watch.elapsedMilliseconds} ms');
+        _log.info(
+          '$name: ${_files.containsKey(sfi) ? '${_files[sfi]!.length} bytes' : 'not on the chip'} '
+          'in ${watch.elapsedMilliseconds} ms',
+        );
         _emit(ReadStage.reading, partial: _build());
       }
       if (sfi == Files.aaKey(app) && _aaSignature == null) {
         await _activeAuthentication(session);
       }
+    }
+    if (app == ChipApp.licence) {
+      final check = licenceSelfCheck(_files);
+      if (check != null) _log.info('LICENCE $check');
     }
   }
 
@@ -310,8 +349,9 @@ class _ReadJob {
       return;
     }
     final watch = Stopwatch()..start();
-    _challenge = Uint8List.fromList(
-        [for (var i = 0; i < 8; i++) reader._random.nextInt(256)]);
+    _challenge = Uint8List.fromList([
+      for (var i = 0; i < 8; i++) reader._random.nextInt(256),
+    ]);
     try {
       _aaSignature = await session.internalAuthenticate(_challenge!, length);
     } on ChipStatusException catch (e) {
@@ -329,8 +369,15 @@ class _ReadJob {
       return;
     }
     for (final (tag, value) in tlvLeafBytes(_files[sfi]!)) {
-      _log.info('LICENCE DG$sfi $tag (${value.length}): ${shapeOf(value)}');
+      _log.fine('LICENCE DG$sfi $tag (${value.length}): ${shapeOf(value)}');
     }
+  }
+
+  /// A chip error: a new connection resets the chip's state, so try again
+  /// (twice at most) before giving up.
+  void _retryChipError(ChipStatusException e) {
+    _log.info('Connection $_connections: chip error ($e)');
+    if (_chipRetries++ >= 2) throw ChipError(e.sw, e.during);
   }
 
   void _checkCancelled() {
@@ -340,8 +387,14 @@ class _ReadJob {
   IdDocument? _build({SecurityResult? security, ReadTimings? timings}) {
     final app = _app;
     if (app == null) return null;
-    return buildDocument(app, want, _files,
-        security: security, timings: timings, keepRawFiles: keepRawFiles);
+    return buildDocument(
+      app,
+      want,
+      _files,
+      security: security,
+      timings: timings,
+      keepRawFiles: keepRawFiles,
+    );
   }
 
   void _emit(ReadStage stage, {IdDocument? partial}) {
@@ -355,15 +408,17 @@ class _ReadJob {
           ? size
           : _partial[f.sfi]?.length ?? 0;
     }
-    listener(ReadProgress(
-      stage,
-      attempt: _attempt,
-      fraction: stage == ReadStage.checking || stage == ReadStage.done
-          ? 1
-          : planned == 0
-              ? 0
-              : done / planned,
-      partial: partial,
-    ));
+    listener(
+      ReadProgress(
+        stage,
+        attempt: 1 + _lost,
+        fraction: stage == ReadStage.checking || stage == ReadStage.done
+            ? 1
+            : planned == 0
+            ? 0
+            : done / planned,
+        partial: partial,
+      ),
+    );
   }
 }

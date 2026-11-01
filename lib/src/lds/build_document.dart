@@ -20,57 +20,59 @@ abstract final class Files {
   static int photo(ChipApp app) => app == ChipApp.licence ? 4 : 2;
   static int signature(ChipApp app) => app == ChipApp.licence ? 5 : 7;
 
-  /// The text files that hold [info]. On the licence the layout is still
-  /// being mapped, so the details come from every text file it has.
+  /// The text files that hold [info].
   static List<int> textFor(ChipApp app, Info info) => switch (app) {
-        ChipApp.icao => switch (info) {
-            Info.documentType ||
-            Info.documentNumber ||
-            Info.names ||
-            Info.sex ||
-            Info.nationality ||
-            Info.dateOfBirth ||
-            Info.dateOfExpiry ||
-            Info.issuingCountry ||
-            Info.mrz =>
-              const [1],
-            Info.nin ||
-            Info.fullName ||
-            Info.otherNames ||
-            Info.placeOfBirth ||
-            Info.address =>
-              const [11],
-            Info.dateOfIssue || Info.issuingAuthority => const [12],
-            Info.otherDetails => const [11, 12],
-            Info.licenceCategories || Info.signature || Info.photo => const [],
-          },
-        ChipApp.licence => switch (info) {
-            Info.documentType || Info.signature || Info.photo => const [],
-            Info.documentNumber ||
-            Info.names ||
-            Info.dateOfBirth ||
-            Info.dateOfExpiry ||
-            Info.dateOfIssue ||
-            Info.issuingCountry ||
-            Info.licenceCategories ||
-            Info.mrz =>
-              const [1],
-            Info.sex || Info.placeOfBirth || Info.nationality => const [2],
-            Info.issuingAuthority => const [1, 3],
-            Info.nin ||
-            Info.fullName ||
-            Info.otherNames ||
-            Info.address ||
-            Info.otherDetails =>
-              const [2, 3, 11],
-          },
-      };
+    ChipApp.icao => switch (info) {
+      Info.documentType ||
+      Info.documentNumber ||
+      Info.names ||
+      Info.sex ||
+      Info.nationality ||
+      Info.dateOfBirth ||
+      Info.dateOfExpiry ||
+      Info.issuingCountry ||
+      Info.mrz => const [1],
+      Info.nin ||
+      Info.fullName ||
+      Info.otherNames ||
+      Info.placeOfBirth ||
+      Info.address => const [11],
+      Info.dateOfIssue || Info.issuingAuthority => const [12],
+      Info.otherDetails => const [11, 12],
+      Info.licenceCategories ||
+      Info.bloodGroup ||
+      Info.signature ||
+      Info.photo => const [],
+    },
+    ChipApp.licence => switch (info) {
+      Info.documentNumber ||
+      Info.names ||
+      Info.dateOfBirth ||
+      Info.dateOfExpiry ||
+      Info.dateOfIssue ||
+      Info.issuingCountry ||
+      Info.issuingAuthority ||
+      Info.licenceCategories => const [1],
+      Info.sex || Info.placeOfBirth => const [2],
+      Info.nin => const [3],
+      Info.mrz || Info.nationality || Info.bloodGroup => const [11],
+      Info.otherDetails => const [3, 11],
+      // Not on the licence, or not mapped yet (the Arabic fields of
+      // DG11 come in otherDetails).
+      Info.documentType ||
+      Info.fullName ||
+      Info.otherNames ||
+      Info.address ||
+      Info.signature ||
+      Info.photo => const [],
+    },
+  };
 
   static String name(int sfi) => switch (sfi) {
-        com => 'EF.COM',
-        sod => 'EF.SOD',
-        _ => 'DG$sfi',
-      };
+    com => 'EF.COM',
+    sod => 'EF.SOD',
+    _ => 'DG$sfi',
+  };
 }
 
 /// ICAO 9303-10 tags in DG11 and DG12 that have a field of their own.
@@ -129,8 +131,7 @@ IdDocument buildDocument(
     sex: w(Info.sex) && mrz != null ? _sex(mrz.sex) : null,
     nationality: w(Info.nationality) ? mrz?.nationality : null,
     dateOfBirth: w(Info.dateOfBirth)
-        ? fullBirth ??
-            (mrz == null ? null : parseYYMMDD(mrz.birth, past: true))
+        ? fullBirth ?? (mrz == null ? null : parseYYMMDD(mrz.birth, past: true))
         : null,
     dateOfExpiry: w(Info.dateOfExpiry) && mrz != null
         ? parseYYMMDD(mrz.expiry, past: false)
@@ -162,17 +163,45 @@ IdDocument _licence(
   ReadTimings? timings,
   Map<String, Uint8List> raw,
 ) {
-  // Until the licence layout is mapped (ISO/IEC 18013-2 plus Algerian
-  // fields in DG11), its values are given by file and tag.
+  bool w(Info i) => want.contains(i);
+  final dg1 = files[1] == null ? null : licenceDemographics(files[1]!);
+  final dg2 = _tags(files[2]);
+  final dg3 = _tags(files[3]);
+  final dg11 = _tags(files[11]);
+  final mrzBytes = dg11['5F3D'];
+  final mrz = mrzBytes == null
+      ? null
+      : MrzFields.parse(latin1.decode(mrzBytes));
+  final categories = files[1] == null ? null : licenceCategories(files[1]!);
   final other = <String, String>{
-    if (want.any((i) => Files.textFor(ChipApp.licence, i).isNotEmpty))
-      for (final sfi in const [1, 2, 3, 11])
-        for (final (tag, value) in tlvLeafBytes(files[sfi] ?? Uint8List(0)))
-          if (!_structureTags.contains(tag)) 'DG$sfi/$tag': printable(value),
+    if (w(Info.otherDetails)) ...{
+      // DG1 normally parses; if its layout is ever different, show it raw.
+      if (files[1] != null && dg1 == null)
+        for (final (tag, value) in tlvLeafBytes(files[1]!))
+          if (!_structureTags.contains(tag)) 'DG1/$tag': printable(value),
+      for (final MapEntry(:key, :value) in dg3.entries)
+        if (key != '5F68') 'DG3/$key': printable(value),
+      for (final MapEntry(:key, :value) in dg11.entries)
+        if (!_licenceDg11Fields.contains(key)) 'DG11/$key': printable(value),
+    },
   };
   return IdDocument(
-    documentType:
-        want.contains(Info.documentType) ? DocumentType.drivingLicence : null,
+    documentType: w(Info.documentType) ? DocumentType.drivingLicence : null,
+    documentNumber: w(Info.documentNumber) ? dg1?.number : null,
+    surname: w(Info.names) ? dg1?.surname : null,
+    givenNames: w(Info.names) ? dg1?.givenNames : null,
+    sex: w(Info.sex) ? _sex5218(dg2['5F35']) : null,
+    nationality: w(Info.nationality) ? mrz?.nationality : null,
+    dateOfBirth: w(Info.dateOfBirth) ? dg1?.birth : null,
+    dateOfIssue: w(Info.dateOfIssue) ? dg1?.issue : null,
+    dateOfExpiry: w(Info.dateOfExpiry) ? dg1?.expiry : null,
+    issuingCountry: w(Info.issuingCountry) ? dg1?.country : null,
+    issuingAuthority: w(Info.issuingAuthority) ? dg1?.authority : null,
+    licenceCategories: w(Info.licenceCategories) ? categories : null,
+    placeOfBirth: w(Info.placeOfBirth) ? _text(dg2['5F11'], ', ', ';') : null,
+    nin: w(Info.nin) ? _text(dg3['5F68']) : null,
+    mrz: w(Info.mrz) ? mrz?.text : null,
+    bloodGroup: w(Info.bloodGroup) ? _text(dg11['5F36']) : null,
     otherDetails: other,
     photo: photo,
     signature: signature,
@@ -180,6 +209,131 @@ IdDocument _licence(
     rawFiles: raw,
     timings: timings,
   );
+}
+
+/// Compares DG1 of the licence with the MRZ in its DG11, without showing
+/// any value: proves on a real card that DG1 is read the right way.
+String? licenceSelfCheck(Map<int, Uint8List> files) {
+  final dg1 = files[1], dg11 = files[11];
+  if (dg1 == null || dg11 == null) return null;
+  final demo = licenceDemographics(dg1);
+  final mrzBytes = _tags(dg11)['5F3D'];
+  final mrz = mrzBytes == null
+      ? null
+      : MrzFields.parse(latin1.decode(mrzBytes));
+  if (demo == null || mrz == null) {
+    return 'DG1 layout ${demo == null ? 'unknown' : 'ok'}, '
+        'MRZ ${mrz == null ? 'not found' : 'ok'}';
+  }
+  String same(bool b) => b ? 'same' : 'DIFFERENT';
+  String? yymmdd(DateTime? d) => d == null ? null : toYYMMDD(d);
+  return 'DG1 vs MRZ: number ${same(demo.number == mrz.documentNumber)}, '
+      'surname ${same(demo.surname == mrz.surname)}, '
+      'birth ${same(yymmdd(demo.birth) == mrz.birth)}, '
+      'expiry ${same(yymmdd(demo.expiry) == mrz.expiry)}';
+}
+
+/// DG11 tags of the Algerian licence with a field of their own, or that
+/// only describe the structure (5F35 lists the other tags).
+const _licenceDg11Fields = {'5F35', '5F36', '5F3D'};
+
+/// The demographic data in DG1 of the licence (tag 5F1F, ISO/IEC 18013-2):
+/// surname and given names, each after its length; the dates of birth,
+/// issue and expiry, 4 BCD bytes each (YYYYMMDD); the issuing country (3
+/// letters); then the issuing authority and the licence number, each after
+/// its length. Null when the layout does not match.
+({
+  String surname,
+  String givenNames,
+  DateTime? birth,
+  DateTime? issue,
+  DateTime? expiry,
+  String country,
+  String authority,
+  String number,
+})?
+licenceDemographics(Uint8List dg1) {
+  Uint8List? data;
+  for (final (tag, value) in tlvLeafBytes(dg1)) {
+    if (tag == '5F1F') data = value;
+  }
+  final v = data;
+  if (v == null) return null;
+  var i = 0;
+  String? text() {
+    if (i >= v.length || i + 1 + v[i] > v.length) return null;
+    final n = v[i++];
+    final out = utf8.decode(v.sublist(i, i + n), allowMalformed: true).trim();
+    i += n;
+    return out;
+  }
+
+  DateTime? date() {
+    if (i + 4 > v.length) return null;
+    final out = _date(v.sublist(i, i + 4));
+    i += 4;
+    return out;
+  }
+
+  final surname = text(), givenNames = text();
+  final birth = date(), issue = date(), expiry = date();
+  if (surname == null || givenNames == null || i + 3 > v.length) return null;
+  final country = latin1.decode(v.sublist(i, i + 3));
+  i += 3;
+  final authority = text(), number = text();
+  if (authority == null || number == null) return null;
+  return (
+    surname: surname,
+    givenNames: givenNames,
+    birth: birth,
+    issue: issue,
+    expiry: expiry,
+    country: country,
+    authority: authority,
+    number: number,
+  );
+}
+
+/// The categories in DG1 of the licence: one tag 87 each, holding
+/// `code;issue;expiry;code;sign;value` with the dates as 4 BCD bytes.
+List<LicenceCategory> licenceCategories(Uint8List dg1) => [
+  for (final (tag, value) in tlvLeafBytes(dg1))
+    if (tag == '87') _category(value),
+];
+
+LicenceCategory _category(Uint8List value) {
+  // BCD bytes never contain 0x3B (`;`), so splitting on it is safe.
+  final parts = <Uint8List>[];
+  var start = 0;
+  for (var i = 0; i <= value.length; i++) {
+    if (i == value.length || value[i] == 0x3B) {
+      parts.add(Uint8List.sublistView(value, start, i));
+      start = i + 1;
+    }
+  }
+  String part(int i) => i < parts.length ? latin1.decode(parts[i]).trim() : '';
+  final conditions = [
+    for (var i = 3; i < parts.length; i++) part(i),
+  ].where((p) => p.isNotEmpty).join(' ');
+  return LicenceCategory(
+    part(0),
+    dateOfIssue: parts.length > 1 ? _date(parts[1]) : null,
+    dateOfExpiry: parts.length > 2 ? _date(parts[2]) : null,
+    conditions: conditions.isEmpty ? null : conditions,
+  );
+}
+
+/// ISO/IEC 5218: 1 male, 2 female.
+Sex? _sex5218(Uint8List? value) {
+  if (value == null || value.isEmpty) return null;
+  final code = value.length == 1
+      ? value[0]
+      : int.tryParse(latin1.decode(value));
+  return switch (code) {
+    1 => Sex.male,
+    2 => Sex.female,
+    _ => Sex.unspecified,
+  };
 }
 
 DocumentImage? _first(List<DocumentImage> images) =>
@@ -205,11 +359,19 @@ Map<String, Uint8List> _tags(Uint8List? file) {
   return out;
 }
 
-/// ICAO text: `<` separates parts. [separator] goes between them.
-String? _text(Uint8List? value, [String separator = ' ']) {
+/// ICAO text: [splitOn] (`<`) separates parts. [separator] goes between
+/// them.
+String? _text(
+  Uint8List? value, [
+  String separator = ' ',
+  String splitOn = '<',
+]) {
   if (value == null) return null;
   final text = utf8.decode(value, allowMalformed: true);
-  final parts = text.split('<').map((p) => p.trim()).where((p) => p.isNotEmpty);
+  final parts = text
+      .split(splitOn)
+      .map((p) => p.trim())
+      .where((p) => p.isNotEmpty);
   final out = parts.join(separator);
   return out.isEmpty ? null : out;
 }
@@ -232,13 +394,13 @@ DateTime? _date(Uint8List? value) {
 }
 
 DocumentType _typeOf(String code) => switch (code.isEmpty ? '' : code[0]) {
-      'P' => DocumentType.passport,
-      'I' || 'A' || 'C' => DocumentType.idCard,
-      _ => DocumentType.other,
-    };
+  'P' => DocumentType.passport,
+  'I' || 'A' || 'C' => DocumentType.idCard,
+  _ => DocumentType.other,
+};
 
 Sex _sex(String s) => switch (s) {
-      'M' => Sex.male,
-      'F' => Sex.female,
-      _ => Sex.unspecified,
-    };
+  'M' => Sex.male,
+  'F' => Sex.female,
+  _ => Sex.unspecified,
+};

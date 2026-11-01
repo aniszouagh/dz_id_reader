@@ -20,7 +20,7 @@ import 'mrz_scanner.dart';
 /// ```
 class MrzCamera {
   MrzCamera({MrzScanner? scanner, this.resolution = ResolutionPreset.veryHigh})
-      : scanner = scanner ?? MrzScanner();
+    : scanner = scanner ?? MrzScanner();
 
   final MrzScanner scanner;
   final ResolutionPreset resolution;
@@ -49,10 +49,15 @@ class MrzCamera {
   Future<void> start() async {
     final cameras = await availableCameras();
     final back = cameras.firstWhere(
-        (c) => c.lensDirection == CameraLensDirection.back,
-        orElse: () => cameras.first);
-    final controller = CameraController(back, resolution,
-        enableAudio: false, imageFormatGroup: ImageFormatGroup.nv21);
+      (c) => c.lensDirection == CameraLensDirection.back,
+      orElse: () => cameras.first,
+    );
+    final controller = CameraController(
+      back,
+      resolution,
+      enableAudio: false,
+      imageFormatGroup: ImageFormatGroup.nv21,
+    );
     await controller.initialize();
     if (_disposed) {
       await controller.dispose();
@@ -66,9 +71,11 @@ class MrzCamera {
     final controller = _controller;
     if (controller == null || _result.isCompleted || scanner.isBusy) return;
     try {
-      final found = await scanner.addCameraImage(image,
-          sensorOrientation: controller.description.sensorOrientation,
-          deviceOrientation: controller.value.deviceOrientation);
+      final found = await scanner.addCameraImage(
+        image,
+        sensorOrientation: controller.description.sensorOrientation,
+        deviceOrientation: controller.value.deviceOrientation,
+      );
       if (found != null && !_result.isCompleted) {
         _result.complete(found);
         await controller.stopImageStream();

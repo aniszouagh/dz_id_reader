@@ -30,10 +30,16 @@ class ChipStatusException implements Exception {
 /// The BAC keys of a document (ICAO 9303-11, 9.7.1). The driving licence's
 /// BAP derives them the same way from the same three values.
 class BacKey {
-  factory BacKey(String documentNumber, String birthYYMMDD, String expiryYYMMDD) {
-    final number =
-        documentNumber.length < 9 ? documentNumber.padRight(9, '<') : documentNumber;
-    final info = '$number${checkDigit(number)}'
+  factory BacKey(
+    String documentNumber,
+    String birthYYMMDD,
+    String expiryYYMMDD,
+  ) {
+    final number = documentNumber.length < 9
+        ? documentNumber.padRight(9, '<')
+        : documentNumber;
+    final info =
+        '$number${checkDigit(number)}'
         '$birthYYMMDD${checkDigit(birthYYMMDD)}'
         '$expiryYYMMDD${checkDigit(expiryYYMMDD)}';
     final seed = Uint8List.sublistView(sha1Of(ascii.encode(info)), 0, 16);
@@ -52,9 +58,16 @@ typedef SendPlain = Future<ResponseApdu> Function(CommandApdu command);
 /// Terminal side of BAC (ICAO 9303-11, 9.7.2): proves both sides know the
 /// key and agrees on session keys. [rndIfd] and [kIfd] are random unless a
 /// test fixes them.
-Future<SecureMessaging> bacAuthenticate(SendPlain send, BacKey key,
-    {Random? random, Uint8List? rndIfd, Uint8List? kIfd}) async {
-  final challenge = await send(const CommandApdu(0x00, 0x84, 0x00, 0x00, ne: 8));
+Future<SecureMessaging> bacAuthenticate(
+  SendPlain send,
+  BacKey key, {
+  Random? random,
+  Uint8List? rndIfd,
+  Uint8List? kIfd,
+}) async {
+  final challenge = await send(
+    const CommandApdu(0x00, 0x84, 0x00, 0x00, ne: 8),
+  );
   if (challenge.sw != Sw.ok || challenge.data.length != 8) {
     throw ChipStatusException(challenge.sw, 'GET CHALLENGE');
   }
@@ -69,11 +82,14 @@ Future<SecureMessaging> bacAuthenticate(SendPlain send, BacKey key,
   final mac = TripleDes(key.mac);
   final eIfd = enc.encrypt(concat([ourRnd, rndIc, ourK]));
   final mIfd = mac.mac(pad(eIfd));
-  final answer = await send(CommandApdu(0x00, 0x82, 0x00, 0x00,
-      data: concat([eIfd, mIfd]), ne: 40));
+  final answer = await send(
+    CommandApdu(0x00, 0x82, 0x00, 0x00, data: concat([eIfd, mIfd]), ne: 40),
+  );
   if (answer.sw != Sw.ok) throw AccessDeniedException(answer.sw);
   final r = answer.data;
-  if (r.length != 40) throw ChipStatusException(answer.sw, 'EXTERNAL AUTHENTICATE');
+  if (r.length != 40) {
+    throw ChipStatusException(answer.sw, 'EXTERNAL AUTHENTICATE');
+  }
   final eIc = Uint8List.sublistView(r, 0, 32);
   if (!sameBytes(mac.mac(pad(eIc)), Uint8List.sublistView(r, 32, 40))) {
     throw ChipStatusException(answer.sw, 'EXTERNAL AUTHENTICATE (MAC)');
@@ -84,6 +100,9 @@ Future<SecureMessaging> bacAuthenticate(SendPlain send, BacKey key,
     throw ChipStatusException(answer.sw, 'EXTERNAL AUTHENTICATE (nonces)');
   }
   final seed = xorBytes(ourK, plain.sublist(16, 32));
-  return SecureMessaging(deriveKey(seed, 1), deriveKey(seed, 2),
-      concat([rndIc.sublist(4, 8), ourRnd.sublist(4, 8)]));
+  return SecureMessaging(
+    deriveKey(seed, 1),
+    deriveKey(seed, 2),
+    concat([rndIc.sublist(4, 8), ourRnd.sublist(4, 8)]),
+  );
 }

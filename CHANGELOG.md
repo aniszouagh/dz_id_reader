@@ -13,6 +13,15 @@
 * `scanner.dart`: `MrzScanner` (no UI) and the `MrzCamera` helper.
 * `testing.dart`: `FakeCard` / `FakeNfc` and a demo card.
 * Fixed: the security checks crashed on the phone ("object is unsendable").
+* Driving licence fields: names, dates, number, issuing country and
+  authority, categories (`LicenceCategory`), sex, place of birth, NIN, MRZ,
+  nationality and blood group (`Info.bloodGroup`).
+* Fixed: a licence read could end with an error at its first big read. A
+  refused big read now falls back to 960-byte, then short reads in the same
+  connection, selects the file again, and other chip errors get up to two
+  reconnections.
+* `FakeCard.demoLicence()`; the fake chip can refuse big reads like real
+  chips do.
 
 ## 0.0.1
 

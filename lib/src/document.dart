@@ -29,6 +29,7 @@ class IdDocument {
     this.dateOfIssue,
     this.issuingAuthority,
     this.licenceCategories,
+    this.bloodGroup,
     this.otherDetails = const {},
     this.signature,
     this.photo,
@@ -64,7 +65,12 @@ class IdDocument {
   final String? address;
   final DateTime? dateOfIssue;
   final String? issuingAuthority;
-  final List<String>? licenceCategories;
+
+  /// Vehicle categories of a driving licence.
+  final List<LicenceCategory>? licenceCategories;
+
+  /// On the driving licence, like `A+`.
+  final String? bloodGroup;
 
   /// Values without a field of their own, keyed by file and tag, like
   /// `DG11/5F16`. Text when printable, hex otherwise.
@@ -86,6 +92,24 @@ class IdDocument {
   /// Never prints the values: they are personal data.
   @override
   String toString() => 'IdDocument(…)';
+}
+
+/// A vehicle category of a driving licence (ISO/IEC 18013-2).
+class LicenceCategory {
+  const LicenceCategory(
+    this.code, {
+    this.dateOfIssue,
+    this.dateOfExpiry,
+    this.conditions,
+  });
+
+  /// Like `B`, `C1` or `D`.
+  final String code;
+  final DateTime? dateOfIssue;
+  final DateTime? dateOfExpiry;
+
+  /// Restriction codes, when the category has any.
+  final String? conditions;
 }
 
 /// The result of a check.

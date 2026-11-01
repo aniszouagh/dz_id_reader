@@ -22,6 +22,13 @@
   reconnections.
 * `FakeCard.demoLicence()`; the fake chip can refuse big reads like real
   chips do.
+* Arabic fields: `surnameArabic`, `givenNamesArabic`, `placeOfBirthArabic`
+  (`Info.namesArabic`, `Info.placeOfBirthArabic`); `fullName` is the
+  Arabic full name; `bloodGroup` on the ID card too.
+* Fixed: Arabic on the ID card showed as replacement characters. Its
+  text is in a one-byte Arabic code page; the reader now detects
+  ISO-8859-6 or Windows-1256 per file.
+* ID card: 5F42 is read as sex and blood group, not as an address.
 
 ## 0.0.1
 

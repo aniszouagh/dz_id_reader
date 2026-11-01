@@ -88,7 +88,7 @@ ID card and passport (ICAO 9303):
 | `Info` | File | Algerian ID card |
 |---|---|---|
 | `documentType`, `documentNumber`, `names`, `sex`, `nationality`, `dateOfBirth`, `dateOfExpiry`, `issuingCountry`, `mrz` | DG1 | 0.15 s, unlock included |
-| `nin`, `fullName`, `otherNames`, `placeOfBirth`, `address` | DG11 | + 0.09 s |
+| `nin`, `fullName` (Arabic), `namesArabic`, `placeOfBirth`, `placeOfBirthArabic`, `bloodGroup`, `otherNames`, `address` | DG11 | + 0.09 s |
 | `dateOfIssue`, `issuingAuthority` | DG12 | + 0.05 s |
 | `otherDetails` (other DG11/DG12 values, by tag) | DG11 + DG12 | |
 | `signature` | DG7 | + 0.6 s |
@@ -101,13 +101,26 @@ Driving licence (ISO/IEC 18013, Algerian layout):
 | `documentNumber`, `names`, `dateOfBirth`, `dateOfIssue`, `dateOfExpiry`, `issuingCountry`, `issuingAuthority`, `licenceCategories` | DG1 | 0.4 s, unlock included |
 | `sex`, `placeOfBirth` | DG2 | + 0.13 s |
 | `nin` | DG3 | + 0.14 s |
-| `mrz`, `nationality`, `bloodGroup` | DG11 | + 0.28 s |
+| `mrz`, `nationality`, `bloodGroup`, `fullName`, `namesArabic`, `placeOfBirthArabic` | DG11 | + 0.28 s |
 | `otherDetails` (the Arabic fields of DG11 and the rest, by tag) | DG3 + DG11 | |
 | `signature` | DG5 | + 3.6 s |
 | `photo` | DG4 | + 10.4 s |
 
 The licence chip is slow (about 0.15 s per command) and refuses big reads,
 hence its slow pictures. `documentType` is known without reading anything.
+
+Algerian layouts the package handles:
+
+- ID card DG11 writes the surname (5F0E), given names (5F0F) and place of
+  birth (5F11) in Latin, then Arabic, and keeps the sex and blood group in
+  5F42 (where ICAO puts the address: the card holds no address). Its
+  Arabic is in a one-byte code page (ISO-8859-6 or Windows-1256), not
+  UTF-8; the reader detects which, per file.
+- Licence DG11 holds the Arabic surname (5F37), given names (5F38) and
+  place of birth (5F39), the blood group (5F36) and the MRZ (5F3D). A
+  wilaya name in Arabic and Latin (5F3A, 5F3E) stays in `otherDetails`:
+  on the card tested, the wilaya of birth and of issue were the same, so
+  which one it is is not known yet.
 
 Ready-made sets: `Info.mrzData` (the default), `Info.personalDetails`,
 `Info.documentDetails`, `Info.allText`, `Info.everything`.
@@ -212,8 +225,7 @@ and to work on screens without a card.
 
 - Android only.
 - ID card: tested on a real Algerian card.
-- Driving licence: tested on a real Algerian licence. The Arabic fields of
-  DG11 are in `otherDetails` by tag until their meaning is confirmed.
+- Driving licence: tested on a real Algerian licence.
 - Passport: not tested yet. Chips that only accept PACE (the newer unlock)
   are not supported yet.
 

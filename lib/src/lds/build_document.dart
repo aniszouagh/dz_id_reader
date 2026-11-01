@@ -7,6 +7,7 @@ import '../document.dart';
 import '../images.dart';
 import '../info.dart';
 import 'mrz_text.dart';
+import 'text.dart';
 import 'tlv.dart';
 
 /// Where each value lives, per chip application. File numbers are short
@@ -34,15 +35,15 @@ abstract final class Files {
       Info.mrz => const [1],
       Info.nin ||
       Info.fullName ||
+      Info.namesArabic ||
       Info.otherNames ||
       Info.placeOfBirth ||
-      Info.address => const [11],
+      Info.placeOfBirthArabic ||
+      Info.address ||
+      Info.bloodGroup => const [11],
       Info.dateOfIssue || Info.issuingAuthority => const [12],
       Info.otherDetails => const [11, 12],
-      Info.licenceCategories ||
-      Info.bloodGroup ||
-      Info.signature ||
-      Info.photo => const [],
+      Info.licenceCategories || Info.signature || Info.photo => const [],
     },
     ChipApp.licence => switch (info) {
       Info.documentNumber ||
@@ -55,12 +56,14 @@ abstract final class Files {
       Info.licenceCategories => const [1],
       Info.sex || Info.placeOfBirth => const [2],
       Info.nin => const [3],
-      Info.mrz || Info.nationality || Info.bloodGroup => const [11],
-      Info.otherDetails => const [3, 11],
-      // Not on the licence, or not mapped yet (the Arabic fields of
-      // DG11 come in otherDetails).
-      Info.documentType ||
+      Info.mrz ||
+      Info.nationality ||
+      Info.bloodGroup ||
       Info.fullName ||
+      Info.namesArabic ||
+      Info.placeOfBirthArabic => const [11],
+      Info.otherDetails => const [3, 11],
+      Info.documentType ||
       Info.otherNames ||
       Info.address ||
       Info.signature ||
@@ -78,6 +81,13 @@ abstract final class Files {
 /// ICAO 9303-10 tags in DG11 and DG12 that have a field of their own.
 const _dg11Fields = {'5F0E', '5F0F', '5F10', '5F2B', '5F11', '5F42'};
 const _dg12Fields = {'5F19', '5F26'};
+
+/// DG11 tags of the Algerian licence with a field of their own, or that
+/// only describe the structure (5F35 lists the other tags). 5F3C and 5F3F
+/// repeat the Latin names of DG1.
+const _licenceDg11Fields = {
+  '5F35', '5F36', '5F37', '5F38', '5F39', '5F3C', '5F3D', '5F3F', //
+};
 
 /// Tags that describe the structure (tag lists, counts), not data.
 const _structureTags = {'5C', '02'};
@@ -110,17 +120,16 @@ IdDocument buildDocument(
 
   final dg1 = files[1];
   final mrz = dg1 == null ? null : _mrzOf(dg1);
-  final dg11 = _tags(files[11]);
-  final dg12 = _tags(files[12]);
-  final fullBirth = _date(dg11['5F2B']);
-  final other = <String, String>{
-    if (w(Info.otherDetails)) ...{
-      for (final MapEntry(:key, :value) in dg11.entries)
-        if (!_dg11Fields.contains(key)) 'DG11/$key': printable(value),
-      for (final MapEntry(:key, :value) in dg12.entries)
-        if (!_dg12Fields.contains(key)) 'DG12/$key': printable(value),
-    },
-  };
+  final dg11 = _TextFile(files[11]);
+  final dg12 = _TextFile(files[12]);
+  // The Algerian ID card writes names and place of birth in Latin, then
+  // Arabic (`SURNAME<لقب`), and keeps the sex and blood group where ICAO
+  // puts the address (`M<ذكر<B+`).
+  final surname = dg11.bilingual('5F0E');
+  final given = dg11.bilingual('5F0F');
+  final place = dg11.bilingual('5F11');
+  final blood = _bloodGroupOf(dg11.parts('5F42'));
+  final bilingualNames = surname != null || given != null;
   return IdDocument(
     documentType: w(Info.documentType) && mrz != null
         ? _typeOf(mrz.documentCode)
@@ -131,21 +140,35 @@ IdDocument buildDocument(
     sex: w(Info.sex) && mrz != null ? _sex(mrz.sex) : null,
     nationality: w(Info.nationality) ? mrz?.nationality : null,
     dateOfBirth: w(Info.dateOfBirth)
-        ? fullBirth ?? (mrz == null ? null : parseYYMMDD(mrz.birth, past: true))
+        ? _date(dg11['5F2B']) ??
+              (mrz == null ? null : parseYYMMDD(mrz.birth, past: true))
         : null,
     dateOfExpiry: w(Info.dateOfExpiry) && mrz != null
         ? parseYYMMDD(mrz.expiry, past: false)
         : null,
     issuingCountry: w(Info.issuingCountry) ? mrz?.issuingState : null,
     mrz: w(Info.mrz) ? mrz?.text : null,
-    nin: w(Info.nin) ? _text(dg11['5F10']) : null,
-    fullName: w(Info.fullName) ? _text(dg11['5F0E']) : null,
-    otherNames: w(Info.otherNames) ? _text(dg11['5F0F']) : null,
-    placeOfBirth: w(Info.placeOfBirth) ? _text(dg11['5F11'], ', ') : null,
-    address: w(Info.address) ? _text(dg11['5F42'], ', ') : null,
+    nin: w(Info.nin) ? dg11.text('5F10') : null,
+    fullName: w(Info.fullName)
+        ? (bilingualNames ? _join([surname?.$2, given?.$2]) : dg11.text('5F0E'))
+        : null,
+    surnameArabic: w(Info.namesArabic) ? surname?.$2 : null,
+    givenNamesArabic: w(Info.namesArabic) ? given?.$2 : null,
+    otherNames: w(Info.otherNames) && given == null ? dg11.text('5F0F') : null,
+    placeOfBirth: w(Info.placeOfBirth)
+        ? place?.$1 ?? dg11.text('5F11', ', ')
+        : null,
+    placeOfBirthArabic: w(Info.placeOfBirthArabic) ? place?.$2 : null,
+    address: w(Info.address) && blood == null ? dg11.text('5F42', ', ') : null,
+    bloodGroup: w(Info.bloodGroup) ? blood : null,
     dateOfIssue: w(Info.dateOfIssue) ? _date(dg12['5F26']) : null,
-    issuingAuthority: w(Info.issuingAuthority) ? _text(dg12['5F19']) : null,
-    otherDetails: other,
+    issuingAuthority: w(Info.issuingAuthority) ? dg12.text('5F19') : null,
+    otherDetails: w(Info.otherDetails)
+        ? {
+            ...dg11.others('DG11', _dg11Fields),
+            ...dg12.others('DG12', _dg12Fields),
+          }
+        : const {},
     photo: photo,
     signature: signature,
     security: security,
@@ -165,26 +188,14 @@ IdDocument _licence(
 ) {
   bool w(Info i) => want.contains(i);
   final dg1 = files[1] == null ? null : licenceDemographics(files[1]!);
-  final dg2 = _tags(files[2]);
-  final dg3 = _tags(files[3]);
-  final dg11 = _tags(files[11]);
+  final dg2 = _TextFile(files[2]);
+  final dg3 = _TextFile(files[3]);
+  final dg11 = _TextFile(files[11]);
   final mrzBytes = dg11['5F3D'];
   final mrz = mrzBytes == null
       ? null
       : MrzFields.parse(latin1.decode(mrzBytes));
   final categories = files[1] == null ? null : licenceCategories(files[1]!);
-  final other = <String, String>{
-    if (w(Info.otherDetails)) ...{
-      // DG1 normally parses; if its layout is ever different, show it raw.
-      if (files[1] != null && dg1 == null)
-        for (final (tag, value) in tlvLeafBytes(files[1]!))
-          if (!_structureTags.contains(tag)) 'DG1/$tag': printable(value),
-      for (final MapEntry(:key, :value) in dg3.entries)
-        if (key != '5F68') 'DG3/$key': printable(value),
-      for (final MapEntry(:key, :value) in dg11.entries)
-        if (!_licenceDg11Fields.contains(key)) 'DG11/$key': printable(value),
-    },
-  };
   return IdDocument(
     documentType: w(Info.documentType) ? DocumentType.drivingLicence : null,
     documentNumber: w(Info.documentNumber) ? dg1?.number : null,
@@ -198,17 +209,130 @@ IdDocument _licence(
     issuingCountry: w(Info.issuingCountry) ? dg1?.country : null,
     issuingAuthority: w(Info.issuingAuthority) ? dg1?.authority : null,
     licenceCategories: w(Info.licenceCategories) ? categories : null,
-    placeOfBirth: w(Info.placeOfBirth) ? _text(dg2['5F11'], ', ', ';') : null,
-    nin: w(Info.nin) ? _text(dg3['5F68']) : null,
+    fullName: w(Info.fullName)
+        ? _join([dg11.text('5F37'), dg11.text('5F38')])
+        : null,
+    surnameArabic: w(Info.namesArabic) ? dg11.text('5F37') : null,
+    givenNamesArabic: w(Info.namesArabic) ? dg11.text('5F38') : null,
+    placeOfBirth: w(Info.placeOfBirth) ? dg2.text('5F11', ', ', ';') : null,
+    placeOfBirthArabic: w(Info.placeOfBirthArabic) ? dg11.text('5F39') : null,
+    nin: w(Info.nin) ? dg3.text('5F68') : null,
     mrz: w(Info.mrz) ? mrz?.text : null,
-    bloodGroup: w(Info.bloodGroup) ? _text(dg11['5F36']) : null,
-    otherDetails: other,
+    bloodGroup: w(Info.bloodGroup) ? dg11.text('5F36') : null,
+    otherDetails: w(Info.otherDetails)
+        ? {
+            // DG1 normally parses; if its layout is ever different, show
+            // it raw.
+            if (files[1] != null && dg1 == null)
+              for (final (tag, value) in tlvLeafBytes(files[1]!))
+                if (!_structureTags.contains(tag)) 'DG1/$tag': printable(value),
+            ...dg3.others('DG3', const {'5F68'}),
+            ...dg11.others('DG11', _licenceDg11Fields),
+          }
+        : const {},
     photo: photo,
     signature: signature,
     security: security,
     rawFiles: raw,
     timings: timings,
   );
+}
+
+/// The values of one data group by tag, with the file's text encoding.
+class _TextFile {
+  _TextFile(Uint8List? file) : tags = _tags(file) {
+    encoding = detectEncoding(tags.values);
+  }
+
+  final Map<String, Uint8List> tags;
+  late final TextEncoding encoding;
+
+  Uint8List? operator [](String tag) => tags[tag];
+
+  /// The parts of [tag], split on [splitOn] (`<` in ICAO text), without
+  /// empty ones.
+  List<String> parts(String tag, [String splitOn = '<']) {
+    final value = tags[tag];
+    if (value == null) return const [];
+    return decodeText(
+      value,
+      encoding,
+    ).split(splitOn).map((p) => p.trim()).where((p) => p.isNotEmpty).toList();
+  }
+
+  /// The text of [tag], its parts joined by [separator].
+  String? text(String tag, [String separator = ' ', String splitOn = '<']) {
+    final p = parts(tag, splitOn);
+    return p.isEmpty ? null : p.join(separator);
+  }
+
+  /// A value written in Latin then Arabic: (latin, arabic). Null for
+  /// other values.
+  (String, String)? bilingual(String tag) {
+    final p = parts(tag);
+    if (p.length < 2 || hasArabic(p.first) || !hasArabic(p[1])) return null;
+    return (p.first, p.sublist(1).join(' '));
+  }
+
+  /// The values without a field of their own, for `otherDetails`: text
+  /// when it reads as text, hex otherwise; empty ones left out.
+  Map<String, String> others(String file, Set<String> named) => {
+    for (final MapEntry(:key, :value) in tags.entries)
+      if (!named.contains(key)) '$file/$key': ?_display(value),
+  };
+
+  String? _display(Uint8List value) {
+    final text = decodeText(value, encoding);
+    if (text.runes.every((r) => r >= 0x20 && r != 0xFFFD)) {
+      final clean = text
+          .split('<')
+          .map((p) => p.trim())
+          .where((p) => p.isNotEmpty);
+      return clean.isEmpty ? null : clean.join(' ');
+    }
+    return printable(value);
+  }
+}
+
+/// On the Algerian ID card, DG11 5F42 holds `M<ذكر<B+`: the sex in Latin
+/// and Arabic, then the blood group. Null when it holds something else
+/// (an address, as ICAO 9303 means it).
+String? _bloodGroupOf(List<String> parts) =>
+    parts.length == 3 &&
+        RegExp(r'^[MFX]$').hasMatch(parts[0]) &&
+        RegExp(r'^(A|B|AB|O)[+-]$').hasMatch(parts[2])
+    ? parts[2]
+    : null;
+
+String? _join(List<String?> parts) {
+  final p = [
+    for (final s in parts)
+      if (s != null && s.isNotEmpty) s,
+  ];
+  return p.isEmpty ? null : p.join(' ');
+}
+
+/// For the logs, without any value: the text encoding of DG11 and DG12,
+/// and whether DG12 5F1B (a date on the Algerian ID card) is the expiry
+/// date of the MRZ.
+String? icaoSelfCheck(Map<int, Uint8List> files) {
+  final out = <String>[];
+  for (final dg in const [11, 12]) {
+    final file = files[dg];
+    if (file != null) {
+      out.add('DG$dg text ${detectEncoding(_tags(file).values).name}');
+    }
+  }
+  final dg1 = files[1], dg12 = files[12];
+  final mrz = dg1 == null ? null : _mrzOf(dg1);
+  final date = dg12 == null ? null : _date(_tags(dg12)['5F1B']);
+  if (mrz != null && date != null) {
+    out.add(
+      'DG12/5F1B vs MRZ expiry: '
+      '${toYYMMDD(date) == mrz.expiry ? 'same' : 'DIFFERENT'}',
+    );
+  }
+  return out.isEmpty ? null : out.join(', ');
 }
 
 /// Compares DG1 of the licence with the MRZ in its DG11, without showing
@@ -232,10 +356,6 @@ String? licenceSelfCheck(Map<int, Uint8List> files) {
       'birth ${same(yymmdd(demo.birth) == mrz.birth)}, '
       'expiry ${same(yymmdd(demo.expiry) == mrz.expiry)}';
 }
-
-/// DG11 tags of the Algerian licence with a field of their own, or that
-/// only describe the structure (5F35 lists the other tags).
-const _licenceDg11Fields = {'5F35', '5F36', '5F3D'};
 
 /// The demographic data in DG1 of the licence (tag 5F1F, ISO/IEC 18013-2):
 /// surname and given names, each after its length; the dates of birth,
@@ -357,23 +477,6 @@ Map<String, Uint8List> _tags(Uint8List? file) {
     out[tag] = before == null ? value : concat([before, '<<'.codeUnits, value]);
   }
   return out;
-}
-
-/// ICAO text: [splitOn] (`<`) separates parts. [separator] goes between
-/// them.
-String? _text(
-  Uint8List? value, [
-  String separator = ' ',
-  String splitOn = '<',
-]) {
-  if (value == null) return null;
-  final text = utf8.decode(value, allowMalformed: true);
-  final parts = text
-      .split(splitOn)
-      .map((p) => p.trim())
-      .where((p) => p.isNotEmpty);
-  final out = parts.join(separator);
-  return out.isEmpty ? null : out;
 }
 
 /// YYYYMMDD as 8 ASCII digits, or as 4 BCD bytes.

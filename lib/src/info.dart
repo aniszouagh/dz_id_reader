@@ -3,16 +3,18 @@
 ///
 /// On ID cards and passports (ICAO 9303) the values come from these files:
 /// - DG1 (fast, about 0.1 s): [documentType] to [mrz];
-/// - DG11 (fast): [nin], [fullName], [otherNames], [placeOfBirth],
-///   [address];
+/// - DG11 (fast): [nin], [fullName], [namesArabic], [otherNames],
+///   [placeOfBirth], [placeOfBirthArabic], [address] (the Algerian ID card
+///   has none there), [bloodGroup];
 /// - DG12 (fast): [dateOfIssue], [issuingAuthority];
 /// - DG7 (about 1.5 s): [signature];
 /// - DG2 (about 4 s): [photo].
 ///
 /// On the driving licence (ISO/IEC 18013): DG1 for the names, dates,
 /// issuing country and authority, number and categories; DG2 for sex and
-/// place of birth; DG3 for the NIN; DG11 for the MRZ, nationality and
-/// blood group; DG5 the signature; DG4 the photo.
+/// place of birth; DG3 for the NIN; DG11 for the MRZ, nationality, blood
+/// group and the Arabic names and place of birth; DG5 the signature; DG4
+/// the photo.
 ///
 /// [otherDetails] gives the values of those files that have no field of
 /// their own, by tag.
@@ -34,10 +36,14 @@ enum Info {
   /// The national identification number (NIN).
   nin,
 
-  /// The full name in national characters.
+  /// The full name in national characters (Arabic on Algerian documents).
   fullName,
+
+  /// Surname and given names in Arabic.
+  namesArabic,
   otherNames,
   placeOfBirth,
+  placeOfBirthArabic,
   address,
   dateOfIssue,
   issuingAuthority,
@@ -69,9 +75,12 @@ enum Info {
   static const Set<Info> personalDetails = {
     nin,
     fullName,
+    namesArabic,
     otherNames,
     placeOfBirth,
+    placeOfBirthArabic,
     address,
+    bloodGroup,
   };
 
   /// Details about the document itself (DG12).
@@ -84,7 +93,6 @@ enum Info {
     ...personalDetails,
     ...documentDetails,
     licenceCategories,
-    bloodGroup,
     otherDetails,
   };
 

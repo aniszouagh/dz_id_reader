@@ -19,8 +19,9 @@ final demoLicenceKey = AccessKey(
 
 /// A made-up driving licence with the layout of the Algerian one: DG1
 /// demographic data and categories, DG2 sex and place of birth, DG3 the
-/// NIN, DG11 blood group, an Arabic field and the MRZ, DG4 photo, DG5
-/// signature. No EF.SOD and no Active Authentication key.
+/// NIN, DG11 blood group, names and place of birth in Arabic, a wilaya in
+/// Arabic and Latin, and the MRZ, DG4 photo, DG5 signature. No EF.SOD and
+/// no Active Authentication key.
 Map<int, Uint8List> demoLicenceFiles() {
   final line1 = 'DLUTO$_number${checkDigit(_number)}'.padRight(30, '<');
   var line2 = '000101${checkDigit('000101')}F290114${checkDigit('290114')}UTO'
@@ -82,11 +83,23 @@ Map<int, Uint8List> demoLicenceFiles() {
     11: _tlv(
       [0x6D],
       [
-        ..._tlv([0x02], [3]),
-        ..._tlv([0x5F, 0x35], [0x5F, 0x36, 0x5F, 0x37, 0x5F, 0x3D]),
+        ..._tlv([0x02], [10]),
+        ..._tlv(
+          [0x5F, 0x35],
+          [
+            for (var t = 0x36; t <= 0x3F; t++) ...[0x5F, t],
+          ],
+        ),
         ..._tlv([0x5F, 0x36], 'O+'.codeUnits),
         ..._tlv([0x5F, 0x37], utf8.encode('عينة')),
+        ..._tlv([0x5F, 0x38], utf8.encode('تجربة')),
+        ..._tlv([0x5F, 0x39], utf8.encode('بلدية الجزائر - الجزائر')),
+        ..._tlv([0x5F, 0x3A], utf8.encode('الجزائر')),
+        ..._tlv([0x5F, 0x3B], const []),
+        ..._tlv([0x5F, 0x3C], 'SPECIMEN'.codeUnits),
         ..._tlv([0x5F, 0x3D], (line1 + line2 + line3).codeUnits),
+        ..._tlv([0x5F, 0x3E], 'ALGER'.codeUnits),
+        ..._tlv([0x5F, 0x3F], 'DEMO'.codeUnits),
       ],
     ),
     4: _tlv([0x65], _tlv([0x5F, 0x40], _jpegIn(demoFiles[2]!))),

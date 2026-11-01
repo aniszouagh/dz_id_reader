@@ -332,10 +332,10 @@ class _ReadJob {
         await _activeAuthentication(session);
       }
     }
-    if (app == ChipApp.licence) {
-      final check = licenceSelfCheck(_files);
-      if (check != null) _log.info('LICENCE $check');
-    }
+    final check = app == ChipApp.licence
+        ? licenceSelfCheck(_files)
+        : icaoSelfCheck(_files);
+    if (check != null) _log.info('${app.name.toUpperCase()} $check');
   }
 
   Future<void> _activeAuthentication(ChipSession session) async {

@@ -44,10 +44,17 @@ void main() {
     expect(category.dateOfIssue, DateTime(2019, 1, 15));
     expect(category.dateOfExpiry, DateTime(2029, 1, 14));
     expect(category.conditions, isNull);
-    // Not mapped yet: by tag.
-    expect(doc.otherDetails['DG11/5F37'], 'عينة');
-    expect(doc.otherDetails, contains('DG3/5F6A'));
-    expect(doc.otherDetails.keys, isNot(contains('DG11/5F35')));
+    expect(doc.surnameArabic, 'عينة');
+    expect(doc.givenNamesArabic, 'تجربة');
+    expect(doc.fullName, 'عينة تجربة');
+    expect(doc.placeOfBirthArabic, 'بلدية الجزائر - الجزائر');
+    // Not mapped (the wilaya: of issue or of birth?), by tag; the Latin
+    // names that repeat DG1, the tag list and empty values left out.
+    expect(doc.otherDetails, {
+      'DG3/5F6A': '201901',
+      'DG11/5F3A': 'الجزائر',
+      'DG11/5F3E': 'ALGER',
+    });
     expect(doc.photo!.format, ImageFormat.jpeg);
     expect(doc.signature!.format, ImageFormat.jpeg);
   });

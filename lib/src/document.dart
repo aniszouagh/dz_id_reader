@@ -23,8 +23,11 @@ class IdDocument {
     this.mrz,
     this.nin,
     this.fullName,
+    this.surnameArabic,
+    this.givenNamesArabic,
     this.otherNames,
     this.placeOfBirth,
+    this.placeOfBirthArabic,
     this.address,
     this.dateOfIssue,
     this.issuingAuthority,
@@ -58,10 +61,14 @@ class IdDocument {
   /// National identification number.
   final String? nin;
 
-  /// Full name in national characters.
+  /// Full name in national characters: in Arabic on Algerian documents
+  /// (surname, then given names).
   final String? fullName;
+  final String? surnameArabic;
+  final String? givenNamesArabic;
   final String? otherNames;
   final String? placeOfBirth;
+  final String? placeOfBirthArabic;
   final String? address;
   final DateTime? dateOfIssue;
   final String? issuingAuthority;

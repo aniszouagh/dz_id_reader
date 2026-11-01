@@ -39,7 +39,7 @@ class App extends StatelessWidget {
 /// Groups of values the user can pick, mapped to what the package reads.
 enum Part {
   main('Main data', {...Info.mrzData, Info.mrz, Info.licenceCategories}),
-  personal('Personal details', {...Info.personalDetails, Info.bloodGroup}),
+  personal('Personal details', Info.personalDetails),
   document('Document details', Info.documentDetails),
   other('Other values', {Info.otherDetails}),
   signature('Signature', {Info.signature}),

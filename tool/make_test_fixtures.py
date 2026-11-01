@@ -1,11 +1,14 @@
-"""Builds the files in test/fixtures/ used by security_test.dart and
-images_test.dart. Nothing here comes from a real document: the keys,
-certificates and pictures are generated on the spot.
+"""Builds the files in test/fixtures/ used by the security and image tests,
+and lib/src/testing/demo_files.dart, the demo document of FakeCard.demo().
+Nothing here comes from a real document: the keys, certificates, values and
+pictures are made up on the spot (a "SPECIMEN DEMO" of the fictional state
+UTO).
 
 Needs openssl, ffmpeg and the Python `cryptography` package.
-Run from the project root:  python3 tool/make_test_fixtures.py
+Run from the project root:  python3 -I tool/make_test_fixtures.py
 """
 
+import base64
 import hashlib
 import os
 import subprocess
@@ -149,5 +152,137 @@ def main() -> None:
                                tlv(b'\x5f\x43', sign)))
 
 
+def check_digit(value: str) -> str:
+    total = 0
+    for i, c in enumerate(value):
+        v = int(c) if c.isdigit() else ord(c) - 55 if c.isalpha() else 0
+        total += v * (7, 3, 1)[i % 3]
+    return str(total % 10)
+
+
+def demo() -> None:
+    """A complete fake ID card: TD1 MRZ, photo, signature, details, Active
+    Authentication key, and EF.SOD signed by a document signer whose
+    certificate a fake country CSCA issued."""
+    tmp = tempfile.mkdtemp()
+    number, birth, expiry = '100000017', '900101', '350101'
+    line1 = f'IDUTO{number}{check_digit(number)}'.ljust(30, '<')
+    line2 = (f'{birth}{check_digit(birth)}F{expiry}{check_digit(expiry)}UTO'
+             .ljust(29, '<'))
+    line2 += check_digit(line1[5:30] + line2[0:7] + line2[8:15] + line2[18:29])
+    line3 = 'SPECIMEN<<DEMO'.ljust(30, '<')
+    dg1 = tlv(b'\x61', tlv(b'\x5f\x1f', (line1 + line2 + line3).encode()))
+
+    def picture(name: str, size: str, expr: str, quality: str) -> bytes:
+        path = os.path.join(tmp, name)
+        run('ffmpeg', '-y', '-f', 'lavfi', '-i', f'color=c=gray:s={size}',
+            '-vf', f"geq=lum='{expr}':cb=128:cr=128", '-frames:v', '1',
+            '-q:v', quality, path)
+        with open(path, 'rb') as f:
+            return f.read()
+
+    # A grey silhouette: head and shoulders.
+    face = picture('face.jpg', '240x320',
+                   'if(lt(pow(X-W/2,2)+pow(Y-H*0.36,2),pow(W*0.21,2))+'
+                   'lt(pow((X-W/2)/(W*0.44),2)+pow((Y-H)/(H*0.36),2),1),'
+                   '95,215)', '6')
+    sign = picture('sign.jpg', '300x100',
+                   'if(lt(abs(Y-(H/2+H*0.28*sin(X/W*9)*cos(X/W*2))),2.5),'
+                   '25,250)', '8')
+    header = b'FAC\x00010\x00' + bytes(24)
+    dg2 = tlv(b'\x75', tlv(b'\x7f\x61', tlv(b'\x02', b'\x01') +
+        tlv(b'\x7f\x60', tlv(b'\xa1', tlv(b'\x80', b'\x01\x01')) +
+            tlv(b'\x5f\x2e', header + face))))
+    dg7 = tlv(b'\x67', tlv(b'\x02', b'\x01') + tlv(b'\x5f\x43', sign))
+    details = [(b'\x5f\x0e', 'SPECIMEN<<DEMO'),
+               (b'\x5f\x0f', 'عينة<<تجريبية'),
+               (b'\x5f\x10', '100000000000000017'),
+               (b'\x5f\x2b', '19900101'),
+               (b'\x5f\x11', 'DEMO CITY<UTOPIA'),
+               (b'\x5f\x42', '1 DEMO STREET<DEMO CITY')]
+    dg11 = tlv(b'\x6b', tlv(b'\x5c', b''.join(t for t, _ in details)) +
+               b''.join(tlv(t, v.encode()) for t, v in details))
+    dg12 = tlv(b'\x6c', tlv(b'\x5c', b'\x5f\x19\x5f\x26') +
+               tlv(b'\x5f\x19', b'DEMO AUTHORITY') +
+               tlv(b'\x5f\x26', b'20250101'))
+    aa = rsa.generate_private_key(public_exponent=65537, key_size=1024)
+    dg15 = tlv(b'\x6f', aa.public_key().public_bytes(
+        serialization.Encoding.DER,
+        serialization.PublicFormat.SubjectPublicKeyInfo))
+    groups = {1: dg1, 2: dg2, 7: dg7, 11: dg11, 12: dg12, 15: dg15}
+    lds = seq(integer(0),
+              seq(oid('2.16.840.1.101.3.4.2.1'), b'\x05\x00'),
+              seq(*[seq(integer(n), tlv(b'\x04', hashlib.sha256(v).digest()))
+                    for n, v in groups.items()]))
+    lds_path = os.path.join(tmp, 'lds.der')
+    with open(lds_path, 'wb') as f:
+        f.write(lds)
+
+    def path(name: str) -> str:
+        return os.path.join(tmp, name)
+
+    run('openssl', 'genpkey', '-algorithm', 'RSA', '-pkeyopt',
+        'rsa_keygen_bits:2048', '-out', path('csca.key'))
+    run('openssl', 'req', '-x509', '-key', path('csca.key'), '-out',
+        path('csca.pem'), '-days', '7300', '-subj',
+        '/C=UT/O=Demo State/CN=Demo CSCA')
+    run('openssl', 'ecparam', '-name', 'prime256v1', '-genkey', '-noout',
+        '-out', path('ds.key'))
+    run('openssl', 'req', '-new', '-key', path('ds.key'), '-out',
+        path('ds.csr'), '-subj', '/C=UT/O=Demo State/CN=Demo Document Signer')
+    run('openssl', 'x509', '-req', '-in', path('ds.csr'), '-CA',
+        path('csca.pem'), '-CAkey', path('csca.key'), '-CAcreateserial',
+        '-days', '3650', '-sha256', '-out', path('ds.pem'))
+    run('openssl', 'cms', '-sign', '-binary', '-nodetach', '-outform', 'DER',
+        '-in', lds_path, '-signer', path('ds.pem'), '-inkey', path('ds.key'),
+        '-md', 'sha256', '-econtent_type', '2.23.136.1.1.1', '-out',
+        path('sod.der'))
+    run('openssl', 'x509', '-in', path('csca.pem'), '-outform', 'DER',
+        '-out', path('csca.der'))
+    with open(path('sod.der'), 'rb') as f:
+        sod = tlv(b'\x77', f.read())
+    with open(path('csca.der'), 'rb') as f:
+        csca = f.read()
+
+    def b64(data: bytes) -> str:
+        text = base64.b64encode(data).decode()
+        lines = [text[i:i + 72] for i in range(0, len(text), 72)]
+        return '\n'.join(f"    '{line}'" for line in lines)
+
+    files = {1: dg1, 2: dg2, 7: dg7, 11: dg11, 12: dg12, 15: dg15, 0x1D: sod}
+    numbers = aa.private_numbers()
+    out = ['// Generated by tool/make_test_fixtures.py. Made-up data: a',
+           '// "SPECIMEN DEMO" ID card of the fictional state UTO.',
+           '// ignore_for_file: lines_longer_than_80_chars',
+           '',
+           "import 'dart:convert';",
+           "import 'dart:typed_data';",
+           '',
+           "const demoNumber = '%s';" % number,
+           'final demoBirth = DateTime(1990, 1, 1);',
+           'final demoExpiry = DateTime(2035, 1, 1);',
+           "final demoAaModulus = BigInt.parse('%x', radix: 16);" %
+           numbers.public_numbers.n,
+           "final demoAaPrivateExponent = BigInt.parse('%x', radix: 16);" %
+           numbers.d,
+           '',
+           '/// The chip files by short file identifier.',
+           'final Map<int, Uint8List> demoFiles = {']
+    for n, data in files.items():
+        out.append(f'  0x{n:02X}: base64Decode(')
+        out.append(b64(data) + ',')
+        out.append('  ),')
+    out.append('};')
+    out.append('')
+    out.append("/// The demo state's CSCA certificate (DER).")
+    out.append('final Uint8List demoCountryCertificate = base64Decode(')
+    out.append(b64(csca) + ',')
+    out.append(');')
+    with open(os.path.join('lib', 'src', 'testing', 'demo_files.dart'),
+              'w') as f:
+        f.write('\n'.join(out) + '\n')
+
+
 if __name__ == '__main__':
     main()
+    demo()

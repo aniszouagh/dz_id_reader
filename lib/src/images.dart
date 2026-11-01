@@ -5,39 +5,69 @@ import 'dart:ui' as ui;
 
 import 'package:jpeg2000/jpeg2000.dart';
 
-import 'licence.dart' show tlvLeafBytes;
+import 'lds/tlv.dart';
 
-enum ImageKind { jpeg, jpeg2000 }
+enum ImageFormat { jpeg, jpeg2000 }
 
-class FoundImage {
-  const FoundImage(this.kind, this.bytes);
+/// A picture from the chip: the face photo or the signature.
+class DocumentImage {
+  const DocumentImage(this.format, this.bytes);
 
-  final ImageKind kind;
+  final ImageFormat format;
+
+  /// The picture file as stored on the chip.
   final Uint8List bytes;
+
+  /// Decodes the picture for drawing (RawImage, a CustomPainter…). JPEG
+  /// 2000, which Android cannot decode, is decoded on a background isolate.
+  Future<ui.Image> decode() async {
+    if (format == ImageFormat.jpeg) {
+      final codec = await ui.instantiateImageCodec(bytes);
+      return (await codec.getNextFrame()).image;
+    }
+    final rgba = await _decodeJpeg2000InBackground(bytes);
+    final done = Completer<ui.Image>();
+    ui.decodeImageFromPixels(rgba.pixels, rgba.width, rgba.height,
+        ui.PixelFormat.rgba8888, done.complete);
+    return done.future;
+  }
+
+  /// Bytes that `Image.memory` can show: the JPEG as it is, or the JPEG
+  /// 2000 converted to PNG.
+  Future<Uint8List> toDisplayBytes() async {
+    if (format == ImageFormat.jpeg) return bytes;
+    final image = await decode();
+    try {
+      final png = await image.toByteData(format: ui.ImageByteFormat.png);
+      return png!.buffer.asUint8List();
+    } finally {
+      image.dispose();
+    }
+  }
 }
 
 const _starts = [
   // JP2 file signature box, JPEG 2000 codestream (SOC + SIZ), JPEG (SOI).
   ([0x00, 0x00, 0x00, 0x0C, 0x6A, 0x50, 0x20, 0x20, 0x0D, 0x0A, 0x87, 0x0A],
-      ImageKind.jpeg2000),
-  ([0xFF, 0x4F, 0xFF, 0x51], ImageKind.jpeg2000),
-  ([0xFF, 0xD8, 0xFF], ImageKind.jpeg),
+      ImageFormat.jpeg2000),
+  ([0xFF, 0x4F, 0xFF, 0x51], ImageFormat.jpeg2000),
+  ([0xFF, 0xD8, 0xFF], ImageFormat.jpeg),
 ];
 
-/// Pictures stored in a data group: the face in DG2, the signature in DG7.
-/// They sit behind biometric headers whose layout varies between
-/// countries, so this looks for where a JPEG or JPEG 2000 file starts in
-/// each value instead of parsing the headers.
-List<FoundImage> findImages(Uint8List dataGroup) {
-  final out = <FoundImage>[];
+/// Pictures stored in a data group: the face in DG2, the signature in DG7
+/// (DG4 and DG5 on the licence). They sit behind biometric headers whose
+/// layout varies between countries, so this looks for where a JPEG or
+/// JPEG 2000 file starts in each value instead of parsing the headers.
+List<DocumentImage> findImages(Uint8List dataGroup) {
+  final out = <DocumentImage>[];
   for (final (_, value) in tlvLeafBytes(dataGroup)) {
-    (int, ImageKind)? first;
-    for (final (start, kind) in _starts) {
+    (int, ImageFormat)? first;
+    for (final (start, format) in _starts) {
       final at = _indexOf(value, start);
-      if (at >= 0 && (first == null || at < first.$1)) first = (at, kind);
+      if (at >= 0 && (first == null || at < first.$1)) first = (at, format);
     }
     if (first != null) {
-      out.add(FoundImage(first.$2, Uint8List.sublistView(value, first.$1)));
+      out.add(DocumentImage(first.$2, Uint8List.sublistView(value, first.$1)));
     }
   }
   return out;
@@ -54,23 +84,9 @@ int _indexOf(Uint8List data, List<int> pattern) {
   return -1;
 }
 
-/// Decodes a found picture for display. JPEG goes to the engine's decoder.
-/// JPEG 2000, which Android cannot decode, is decoded in pure Dart on a
-/// background isolate so the screen does not freeze.
-Future<ui.Image> decodeImage(FoundImage image) async {
-  if (image.kind == ImageKind.jpeg) {
-    final codec = await ui.instantiateImageCodec(image.bytes);
-    return (await codec.getNextFrame()).image;
-  }
-  final rgba = await _decodeJpeg2000InBackground(Uint8List.fromList(image.bytes));
-  final done = Completer<ui.Image>();
-  ui.decodeImageFromPixels(rgba.pixels, rgba.width, rgba.height,
-      ui.PixelFormat.rgba8888, done.complete);
-  return done.future;
-}
-
-/// Not async and not inline in [decodeImage], so the closure sent to the
-/// isolate carries only [bytes] (see securityReportInBackground).
+/// Not async and not inline in [DocumentImage.decode], so the closure sent
+/// to the isolate carries only [bytes]: a closure takes its scope's whole
+/// context along.
 Future<({Uint8List pixels, int width, int height})> _decodeJpeg2000InBackground(
         Uint8List bytes) =>
     Isolate.run(() => decodeJpeg2000(bytes));

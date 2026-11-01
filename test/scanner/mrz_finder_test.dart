@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:dz_id_reader/src/mrz.dart';
+import 'package:dz_id_reader/src/scanner/mrz_finder.dart';
 
 // ICAO 9303 part 5 TD1 specimen.
 const specimen = [

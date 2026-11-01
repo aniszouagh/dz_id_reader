@@ -6,6 +6,7 @@ import 'package:pointycastle/ecc/ecc_fp.dart' as fp;
 import 'package:pointycastle/export.dart' as pc;
 
 import 'der.dart';
+import 'document.dart';
 
 /// Checks on the chip's security data (ICAO 9303 part 11):
 /// - EF.SOD holds a hash of every data group, signed by the issuing
@@ -118,15 +119,37 @@ class Certificate {
         .join()
         .toUpperCase();
     i++; // signature algorithm, repeated after the signed part
-    final issuer = _name(tbs[i++]);
+    final issuer = tbs[i++];
     final validity = tbs[i++];
-    final subject = _name(tbs[i++]);
-    return Certificate._(serial, issuer, subject, validity[0].time,
-        validity[1].time, PublicKey.parse(tbs[i]));
+    final subject = tbs[i++];
+    return Certificate._(
+      serial: serial,
+      issuer: _name(issuer),
+      subject: _name(subject),
+      notBefore: validity[0].time,
+      notAfter: validity[1].time,
+      publicKey: PublicKey.parse(tbs[i]),
+      issuerDer: issuer.encoded,
+      subjectDer: subject.encoded,
+      signed: cert[0].encoded,
+      signatureAlgorithm: cert[1],
+      signatureValue: cert[2].bits,
+    );
   }
 
-  Certificate._(this.serial, this.issuer, this.subject, this.notBefore,
-      this.notAfter, this.publicKey);
+  Certificate._({
+    required this.serial,
+    required this.issuer,
+    required this.subject,
+    required this.notBefore,
+    required this.notAfter,
+    required this.publicKey,
+    required this.issuerDer,
+    required this.subjectDer,
+    required this.signed,
+    required this.signatureAlgorithm,
+    required this.signatureValue,
+  });
 
   final String serial;
   final String issuer;
@@ -134,6 +157,24 @@ class Certificate {
   final DateTime notBefore;
   final DateTime notAfter;
   final PublicKey publicKey;
+
+  /// Encoded names, compared byte for byte to match a certificate to its
+  /// issuer.
+  final Uint8List issuerDer;
+  final Uint8List subjectDer;
+
+  /// The signed part (tbsCertificate) and its signature.
+  final Uint8List signed;
+  final Der signatureAlgorithm;
+  final Uint8List signatureValue;
+
+  /// Whether [issuerCert] issued and signed this certificate. Null when
+  /// the algorithm is not supported here.
+  bool? isSignedBy(Certificate issuerCert) {
+    if (!_same(issuerDer, issuerCert.subjectDer)) return false;
+    return verifySignature(issuerCert.publicKey, signatureAlgorithm, 'SHA-256',
+        signed, signatureValue);
+  }
 }
 
 const _nameParts = {
@@ -425,59 +466,115 @@ bool? verifyActiveAuthentication(
   return null;
 }
 
-/// [securityReport] on a background isolate. The closure is made here and
-/// not in the caller: a closure sent to an isolate takes along its scope's
-/// whole context, and in a widget method that context holds the State
-/// (unsendable).
-Future<List<(String, String, bool?)>> securityReportInBackground(
-        Uint8List? sodBytes, Map<int, Uint8List> files) =>
-    Isolate.run(() => securityReport(sodBytes, files));
+/// What the checks need, all sendable to an isolate.
+typedef VerifyInput = ({
+  bool checkChip,
+  bool checkData,
+  Uint8List? aaKeyFile,
+  Uint8List? aaChallenge,
+  Uint8List? aaSignature,
+  Uint8List? sod,
+  Map<int, Uint8List> files,
+  List<Uint8List> trusted,
+});
 
-/// What EF.SOD says about the data groups read ([files], by number), as
-/// (title, detail, passed) rows for the screen. Passed is null when
-/// something could not be checked. Pure Dart, so it can run on an isolate.
-List<(String, String, bool?)> securityReport(
-    Uint8List? sodBytes, Map<int, Uint8List> files) {
+/// [verifyDocument] on a background isolate. The closure is made here and
+/// not in the caller: a closure sent to an isolate takes its scope's whole
+/// context along, and in a widget method that context holds the State
+/// (unsendable).
+Future<SecurityResult> verifyInBackground(VerifyInput input) =>
+    Isolate.run(() => verifyDocument(input));
+
+/// Runs the checks asked for in [input]. [VerifyInput.files] are the data
+/// groups read, by number.
+SecurityResult verifyDocument(VerifyInput input) {
+  var chipGenuine = CheckStatus.notChecked;
+  String? chipKey;
+  if (input.checkChip) {
+    final keyFile = input.aaKeyFile;
+    final signature = input.aaSignature;
+    if (keyFile == null) {
+      chipGenuine = CheckStatus.notSupported;
+    } else {
+      try {
+        chipKey = publicKeyOfDg15(keyFile).description;
+        final ok = signature == null
+            ? false
+            : verifyActiveAuthentication(keyFile, input.aaChallenge!, signature);
+        chipGenuine = switch (ok) {
+          true => CheckStatus.passed,
+          false => CheckStatus.failed,
+          null => CheckStatus.notSupported,
+        };
+      } on Object {
+        chipGenuine = CheckStatus.failed;
+      }
+    }
+  }
+  if (!input.checkData) {
+    return SecurityResult(chipGenuine: chipGenuine, chipKey: chipKey);
+  }
+  final sodBytes = input.sod;
   if (sodBytes == null) {
-    return [('Data unchanged since issue', 'EF.SOD could not be read', null)];
+    return SecurityResult(
+      chipGenuine: chipGenuine,
+      chipKey: chipKey,
+      dataUnchanged: CheckStatus.notSupported,
+      issuerSignature: CheckStatus.notSupported,
+      countryCertificate: CheckStatus.notSupported,
+    );
   }
   final sod = Sod.parse(sodBytes);
-  final hashes = sod.checkHashes(files);
-  final groups = hashes.keys.toList()..sort();
-  final changed = [for (final dg in groups) if (!hashes[dg]!) 'DG$dg'];
-  final rows = <(String, String, bool?)>[
-    (
-      'Data unchanged since issue',
-      groups.isEmpty
-          ? 'No data group to compare'
-          : changed.isEmpty
-              ? '${groups.map((dg) => 'DG$dg').join(', ')} match the '
-                  '${sod.hashAlgorithm} hashes signed by the issuer'
-              : 'Changed since issue: ${changed.join(', ')}',
-      groups.isEmpty ? null : changed.isEmpty,
-    ),
+  final hashes = sod.checkHashes(input.files);
+  final changed = [
+    for (final dg in hashes.keys.toList()..sort())
+      if (!hashes[dg]!) 'DG$dg',
   ];
   final signer = sod.signer;
+  var country = CheckStatus.notChecked;
   if (signer == null) {
-    rows.add(('Signed by the issuer', 'EF.SOD has no signer certificate', null));
-  } else {
-    String day(DateTime d) => '${d.year}-${d.month.toString().padLeft(2, '0')}-'
-        '${d.day.toString().padLeft(2, '0')}';
-    final valid = sod.signatureValid();
-    rows.add((
-      'Signed by the issuer',
-      '${valid == null ? 'Signature algorithm not supported here.\n' : ''}'
-          '${signer.subject}\nIssued by: ${signer.issuer}\n'
-          'Valid ${day(signer.notBefore)} to ${day(signer.notAfter)}, '
-          '${signer.publicKey.description}',
-      valid,
-    ));
+    country = CheckStatus.notSupported;
+  } else if (input.trusted.isNotEmpty) {
+    country = CheckStatus.failed;
+    for (final der in input.trusted) {
+      final Certificate csca;
+      try {
+        csca = Certificate.parse(Der.parse(der));
+      } on Object {
+        continue;
+      }
+      final ok = signer.isSignedBy(csca);
+      if (ok == true) {
+        country = CheckStatus.passed;
+        break;
+      }
+      if (ok == null) country = CheckStatus.notSupported;
+    }
   }
-  rows.add((
-    'Country root certificate (CSCA)',
-    'Not checked yet: needs Algeria\'s CSCA certificate to prove that the '
-        'signer above really belongs to the state',
-    null,
-  ));
-  return rows;
+  return SecurityResult(
+    chipGenuine: chipGenuine,
+    chipKey: chipKey,
+    dataUnchanged: hashes.isEmpty
+        ? CheckStatus.notSupported
+        : changed.isEmpty
+            ? CheckStatus.passed
+            : CheckStatus.failed,
+    changedFiles: changed,
+    issuerSignature: switch (sod.signatureValid()) {
+      true => CheckStatus.passed,
+      false => CheckStatus.failed,
+      null => CheckStatus.notSupported,
+    },
+    countryCertificate: country,
+    documentSigner: signer == null
+        ? null
+        : CertificateInfo(
+            subject: signer.subject,
+            issuer: signer.issuer,
+            serialNumber: signer.serial,
+            validFrom: signer.notBefore,
+            validTo: signer.notAfter,
+            keyDescription: signer.publicKey.description,
+          ),
+  );
 }

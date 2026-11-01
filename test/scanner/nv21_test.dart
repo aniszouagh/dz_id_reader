@@ -3,7 +3,7 @@ import 'dart:ui';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:dz_id_reader/src/nv21.dart';
+import 'package:dz_id_reader/src/scanner/nv21.dart';
 
 void main() {
   test('cropNv21 copies the Y rows and the matching VU rows', () {

@@ -1,16 +1,8 @@
-# dz_id_reader_example
+# dz_id_reader example
 
-Demonstrates how to use the dz_id_reader plugin.
+The test app of the package, built only on its public API: scan a document
+(or type the 3 values), choose what to read, read the chip, and see the
+values, the security checks and where the time went. "Try the demo card"
+reads a made-up card without NFC.
 
-## Getting Started
-
-This project is a starting point for a Flutter application.
-
-A few resources to get you started if this is your first Flutter project:
-
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+Run it on an Android phone with NFC: `flutter run`.

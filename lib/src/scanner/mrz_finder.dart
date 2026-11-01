@@ -1,13 +1,6 @@
-import 'package:dmrtd/dmrtd.dart' show MRZ;
-
-/// The three MRZ values needed to unlock the chip (the BAC key).
-class MrzKey {
-  final String documentNumber;
-  final DateTime dateOfBirth;
-  final DateTime dateOfExpiry;
-
-  const MrzKey(this.documentNumber, this.dateOfBirth, this.dateOfExpiry);
-}
+import '../access_key.dart';
+import '../document.dart';
+import '../lds/mrz_text.dart';
 
 /// Finds the BAC key in OCR text of an ID card (TD1) or passport (TD3) MRZ.
 ///
@@ -28,7 +21,7 @@ class MrzFinder {
   // digits, so a document number needs at least 5 real digits; that keeps
   // the names line from being read as line 1.
   static final _td1Line1 = RegExp(
-      '^.{0,2}?[A-Z][A-Z<][A-Z<]{3}([A-Z0-9<]{9})([$_digitLike])');
+      '^.{0,2}?([A-Z])[A-Z<][A-Z<]{3}([A-Z0-9<]{9})([$_digitLike])');
   static final _td1Line2 = RegExp('^.{0,2}?([$_digitLike]{6})([$_digitLike])'
       '([MF<])([$_digitLike]{6})([$_digitLike])[A-Z<]{3}');
   static final _td3Line2 = RegExp(
@@ -38,7 +31,7 @@ class MrzFinder {
   // Whole lines, for the composite check digit. The optional data fields
   // are captured loosely because OCR often gets the number of `<` wrong.
   static final _td1Full1 = RegExp(
-      '^.{0,2}?[A-Z][A-Z<][A-Z<]{3}([A-Z0-9<]{9})([$_digitLike])([A-Z0-9<]*)\$');
+      '^.{0,2}?([A-Z])[A-Z<][A-Z<]{3}([A-Z0-9<]{9})([$_digitLike])([A-Z0-9<]*)\$');
   static final _td1Full2 = RegExp('^.{0,2}?([$_digitLike]{6})([$_digitLike])'
       '[MF<]([$_digitLike]{6})([$_digitLike])[A-Z<]{3}([A-Z0-9<]*)'
       '([$_digitLike])\$');
@@ -51,13 +44,28 @@ class MrzFinder {
   final _seenDates = <String, int>{};
   String? _docNumber;
   (DateTime, DateTime)? _dates;
+  DocumentType? _type;
 
   bool get hasDocumentNumber => _docNumber != null;
   bool get hasDates => _dates != null;
 
-  MrzKey? get key => _docNumber != null && _dates != null
-      ? MrzKey(_docNumber!, _dates!.$1, _dates!.$2)
+  /// The key, once both the number and the dates are found.
+  AccessKey? get key => _docNumber != null && _dates != null
+      ? AccessKey(
+          documentNumber: _docNumber!,
+          dateOfBirth: _dates!.$1,
+          dateOfExpiry: _dates!.$2,
+          documentType: _type)
       : null;
+
+  /// From the document code: I (ID card), P (passport), D (driving
+  /// licence).
+  static DocumentType _typeOf(String code) => switch (code) {
+        'I' || 'A' || 'C' => DocumentType.idCard,
+        'P' => DocumentType.passport,
+        'D' => DocumentType.drivingLicence,
+        _ => DocumentType.other,
+      };
 
   /// Feeds the lines ML Kit recognized in one camera frame.
   void addFrame(Iterable<String> rawLines) {
@@ -68,8 +76,11 @@ class MrzFinder {
     for (final line in lines) {
       final id1 = _td1Line1.firstMatch(line);
       if (id1 != null) {
-        final doc = _checkedDocNumber(id1[1]!, _digit(id1[2]!));
-        if (doc != null) docsThisFrame.add(doc);
+        final doc = _checkedDocNumber(id1[2]!, _digit(id1[3]!));
+        if (doc != null) {
+          docsThisFrame.add(doc);
+          _type = _typeOf(id1[1]!);
+        }
       }
       final id2 = _td1Line2.firstMatch(line);
       if (id2 != null) {
@@ -83,6 +94,7 @@ class MrzFinder {
         if (doc != null && dates != null) {
           docsThisFrame.add(doc);
           datesThisFrame.add(dates);
+          _type = DocumentType.passport;
         }
       }
     }
@@ -114,13 +126,15 @@ class MrzFinder {
       final covered = '$docField${_digit(pp[2]!)}${dates.substring(0, 6)}'
           '${_digit(pp[4]!)}${dates.substring(6)}${_digit(pp[6]!)}'
           '$personal${pp[8]}';
-      if (_check(covered, _digit(pp[9]!))) return _accept(docField, dates);
+      if (_check(covered, _digit(pp[9]!))) {
+        return _accept(docField, dates, DocumentType.passport);
+      }
     }
     for (final first in lines) {
       final l1 = _td1Full1.firstMatch(first);
       if (l1 == null) continue;
-      final docField = _checkedDocField(l1[1]!, _digit(l1[2]!));
-      final optional1 = _fixedFiller(l1[3]!, 15);
+      final docField = _checkedDocField(l1[2]!, _digit(l1[3]!));
+      final optional1 = _fixedFiller(l1[4]!, 15);
       if (docField == null || optional1 == null) continue;
       for (final second in lines) {
         final l2 = _td1Full2.firstMatch(second);
@@ -128,16 +142,19 @@ class MrzFinder {
         final dates = _checkedDates(l2[1]!, l2[2]!, l2[3]!, l2[4]!);
         final optional2 = _fixedFiller(l2[5]!, 11);
         if (dates == null || optional2 == null) continue;
-        final covered = '$docField${_digit(l1[2]!)}$optional1'
+        final covered = '$docField${_digit(l1[3]!)}$optional1'
             '${dates.substring(0, 6)}${_digit(l2[2]!)}'
             '${dates.substring(6)}${_digit(l2[4]!)}$optional2';
-        if (_check(covered, _digit(l2[6]!))) return _accept(docField, dates);
+        if (_check(covered, _digit(l2[6]!))) {
+          return _accept(docField, dates, _typeOf(l1[1]!));
+        }
       }
     }
     return false;
   }
 
-  bool _accept(String docField, String dates) {
+  bool _accept(String docField, String dates, DocumentType type) {
+    _type = type;
     _docNumber = docField.replaceAll('<', '');
     _dates = (
       _parseYYMMDD(dates.substring(0, 6), past: true)!,
@@ -207,7 +224,7 @@ class MrzFinder {
 
   static bool _check(String value, String check) =>
       RegExp(r'^\d$').hasMatch(check) &&
-      MRZ.calculateCheckDigit(value) == int.parse(check);
+      checkDigit(value) == int.parse(check);
 
   static const _toDigit = {
     'O': '0', 'Q': '0', 'D': '0', 'U': '0', 'I': '1', 'L': '1', //
@@ -216,14 +233,6 @@ class MrzFinder {
   static String _digit(String c) => _toDigit[c] ?? c;
   static String _digits(String s) => s.split('').map(_digit).join();
 
-  static DateTime? _parseYYMMDD(String s, {required bool past}) {
-    final yy = int.parse(s.substring(0, 2));
-    final mm = int.parse(s.substring(2, 4));
-    final dd = int.parse(s.substring(4, 6));
-    final nowYY = DateTime.now().year % 100;
-    final year = past && yy > nowYY ? 1900 + yy : 2000 + yy;
-    final date = DateTime(year, mm, dd);
-    if (date.month != mm || date.day != dd) return null;
-    return date;
-  }
+  static DateTime? _parseYYMMDD(String s, {required bool past}) =>
+      parseYYMMDD(s, past: past);
 }

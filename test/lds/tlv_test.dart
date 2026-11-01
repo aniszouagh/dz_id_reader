@@ -2,7 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:dz_id_reader/src/licence.dart';
+import 'package:dz_id_reader/src/lds/tlv.dart';
 
 void main() {
   test('tlvLeaves opens nested tags and shows text or hex', () {

@@ -1,4 +1,4 @@
-## Unreleased
+## 0.1.0
 
 * Public API: `DocumentReader`, `AccessKey`, `Info`, `Check`, `IdDocument`,
   `ReadProgress`, typed `ReadException`s. Reads only the chip files that
@@ -28,7 +28,9 @@
 * Fixed: Arabic on the ID card showed as replacement characters. Its
   text is in a one-byte Arabic code page; the reader now detects
   ISO-8859-6 or Windows-1256 per file.
-* ID card: 5F42 is read as sex and blood group, not as an address.
+* ID card: 5F42 is read as sex and blood group, not as an address; the
+  issuing authority comes in Latin and Arabic (`issuingAuthorityArabic`).
+* The demo ID card has the Algerian layout (made-up values).
 
 ## 0.0.1
 

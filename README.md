@@ -21,7 +21,7 @@ dependencies:
   dz_id_reader:
     git:
       url: https://github.com/aniszouagh/dz_id_reader.git
-      ref: main # use a version tag once one exists
+      ref: v0.1.0
 ```
 
 The repository is private: the machine that builds the app needs read access
@@ -113,9 +113,10 @@ Algerian layouts the package handles:
 
 - ID card DG11 writes the surname (5F0E), given names (5F0F) and place of
   birth (5F11) in Latin, then Arabic, and keeps the sex and blood group in
-  5F42 (where ICAO puts the address: the card holds no address). Its
-  Arabic is in a one-byte code page (ISO-8859-6 or Windows-1256), not
-  UTF-8; the reader detects which, per file.
+  5F42 (where ICAO puts the address: the card holds no address). DG12
+  writes the issuing authority (5F19) in Latin then Arabic, and the expiry
+  date in full (5F1B). Its Arabic is in ISO-8859-6, not UTF-8 (the reader
+  also handles Windows-1256, and detects which per file).
 - Licence DG11 holds the Arabic surname (5F37), given names (5F38) and
   place of birth (5F39), the blood group (5F36) and the MRZ (5F3D). A
   wilaya name in Arabic and Latin (5F3A, 5F3E) stays in `otherDetails`:
@@ -216,8 +217,8 @@ final doc = await reader.read(demoKey, want: Info.everything);
 
 `FakeCard` simulates a chip, with BAC, secure messaging, big reads (or
 their refusal) and Active Authentication. `FakeCard.demo()` is a made-up
-"SPECIMEN DEMO" ID card of the fictional state UTO, signed under
-`demoCountryCertificate`; `FakeCard.demoLicence()` (key `demoLicenceKey`)
+"SPECIMEN DEMO" ID card of the fictional state UTO, with the Algerian
+layout, signed under `demoCountryCertificate`; `FakeCard.demoLicence()` (key `demoLicenceKey`)
 is a made-up licence with the Algerian layout. Use them in widget tests,
 and to work on screens without a card.
 

@@ -194,17 +194,23 @@ def demo() -> None:
         tlv(b'\x7f\x60', tlv(b'\xa1', tlv(b'\x80', b'\x01\x01')) +
             tlv(b'\x5f\x2e', header + face))))
     dg7 = tlv(b'\x67', tlv(b'\x02', b'\x01') + tlv(b'\x5f\x43', sign))
-    details = [(b'\x5f\x0e', 'SPECIMEN<<DEMO'),
-               (b'\x5f\x0f', 'عينة<<تجريبية'),
+    # The Algerian ID card's layout: Latin then Arabic, the sex and blood
+    # group where ICAO puts the address, and Arabic in ISO-8859-6.
+    details = [(b'\x5f\x0e', 'SPECIMEN<عينة'),
+               (b'\x5f\x0f', 'DEMO<تجربة'),
                (b'\x5f\x10', '100000000000000017'),
                (b'\x5f\x2b', '19900101'),
-               (b'\x5f\x11', 'DEMO CITY<UTOPIA'),
-               (b'\x5f\x42', '1 DEMO STREET<DEMO CITY')]
+               (b'\x5f\x11', 'DEMO CITY<مدينة تجريبية'),
+               (b'\x5f\x42', 'F<أنثى<O+'),
+               (b'\x5f\x16', '<<')]
     dg11 = tlv(b'\x6b', tlv(b'\x5c', b''.join(t for t, _ in details)) +
-               b''.join(tlv(t, v.encode()) for t, v in details))
-    dg12 = tlv(b'\x6c', tlv(b'\x5c', b'\x5f\x19\x5f\x26') +
-               tlv(b'\x5f\x19', b'DEMO AUTHORITY') +
-               tlv(b'\x5f\x26', b'20250101'))
+               b''.join(tlv(t, v.encode('iso8859_6')) for t, v in details))
+    document = [(b'\x5f\x19', 'DEMO AUTHORITY<سلطة تجريبية'),
+                (b'\x5f\x26', '20250101'),
+                (b'\x5f\x1b', '20350101'),
+                (b'\x5f\x1d', 'DEMO IDENTITY CARD<بطاقة تجريبية')]
+    dg12 = tlv(b'\x6c', tlv(b'\x5c', b''.join(t for t, _ in document)) +
+               b''.join(tlv(t, v.encode('iso8859_6')) for t, v in document))
     aa = rsa.generate_private_key(public_exponent=65537, key_size=1024)
     dg15 = tlv(b'\x6f', aa.public_key().public_bytes(
         serialization.Encoding.DER,

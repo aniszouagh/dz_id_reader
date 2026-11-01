@@ -1,6 +1,6 @@
 name: dz_id_reader
 description: "Reads Algerian ID cards, passports and driving licences over NFC, with MRZ scanning."
-version: 0.0.1
+version: 0.1.0
 publish_to: none
 repository: https://github.com/aniszouagh/dz_id_reader
 

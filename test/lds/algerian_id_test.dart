@@ -58,6 +58,22 @@ void main() {
       expect(doc.dateOfBirth, DateTime(1990, 1, 1));
       expect(doc.otherDetails, isEmpty); // 5F16 "<<" is empty
     });
+
+    test('Algerian ID card DG12, Arabic in $name', () {
+      final dg12 = tlv(
+        [0x6C],
+        [
+          ...tlv([0x5F, 0x19], encode('DEMO AUTHORITY<سلطة تجريبية', table)),
+          ...tlv([0x5F, 0x26], '20250101'.codeUnits),
+          ...tlv([0x5F, 0x1B], '20350101'.codeUnits),
+        ],
+      );
+      final doc = buildDocument(ChipApp.icao, Info.everything, {12: dg12});
+      expect(doc.issuingAuthority, 'DEMO AUTHORITY');
+      expect(doc.issuingAuthorityArabic, 'سلطة تجريبية');
+      expect(doc.dateOfIssue, DateTime(2025, 1, 1));
+      expect(doc.otherDetails, isEmpty); // 5F1B: the expiry date in full
+    });
   }
 
   test('ICAO layout (a full name and an address) is read as ICAO', () {

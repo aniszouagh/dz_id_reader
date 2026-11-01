@@ -31,6 +31,7 @@ class IdDocument {
     this.address,
     this.dateOfIssue,
     this.issuingAuthority,
+    this.issuingAuthorityArabic,
     this.licenceCategories,
     this.bloodGroup,
     this.otherDetails = const {},
@@ -72,6 +73,10 @@ class IdDocument {
   final String? address;
   final DateTime? dateOfIssue;
   final String? issuingAuthority;
+
+  /// The issuing authority in Arabic, when the document has it (the
+  /// Algerian ID card).
+  final String? issuingAuthorityArabic;
 
   /// Vehicle categories of a driving licence.
   final List<LicenceCategory>? licenceCategories;

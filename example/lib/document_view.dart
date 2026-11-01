@@ -53,6 +53,7 @@ class DocumentView extends StatelessWidget {
       ('Address', doc.address),
       ('Date of issue', date(doc.dateOfIssue)),
       ('Issuing authority', doc.issuingAuthority),
+      ('Issuing authority (Arabic)', doc.issuingAuthorityArabic),
       (
         'Licence categories',
         doc.licenceCategories

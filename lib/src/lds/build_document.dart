@@ -122,13 +122,14 @@ IdDocument buildDocument(
   final mrz = dg1 == null ? null : _mrzOf(dg1);
   final dg11 = _TextFile(files[11]);
   final dg12 = _TextFile(files[12]);
-  // The Algerian ID card writes names and place of birth in Latin, then
-  // Arabic (`SURNAME<لقب`), and keeps the sex and blood group where ICAO
-  // puts the address (`M<ذكر<B+`).
+  // The Algerian ID card writes names, place of birth and issuing
+  // authority in Latin, then Arabic (`SURNAME<لقب`), and keeps the sex and
+  // blood group where ICAO puts the address (`M<ذكر<B+`).
   final surname = dg11.bilingual('5F0E');
   final given = dg11.bilingual('5F0F');
   final place = dg11.bilingual('5F11');
   final blood = _bloodGroupOf(dg11.parts('5F42'));
+  final authority = dg12.bilingual('5F19');
   final bilingualNames = surname != null || given != null;
   return IdDocument(
     documentType: w(Info.documentType) && mrz != null
@@ -162,11 +163,19 @@ IdDocument buildDocument(
     address: w(Info.address) && blood == null ? dg11.text('5F42', ', ') : null,
     bloodGroup: w(Info.bloodGroup) ? blood : null,
     dateOfIssue: w(Info.dateOfIssue) ? _date(dg12['5F26']) : null,
-    issuingAuthority: w(Info.issuingAuthority) ? dg12.text('5F19') : null,
+    issuingAuthority: w(Info.issuingAuthority)
+        ? authority?.$1 ?? dg12.text('5F19')
+        : null,
+    issuingAuthorityArabic: w(Info.issuingAuthority) ? authority?.$2 : null,
     otherDetails: w(Info.otherDetails)
         ? {
             ...dg11.others('DG11', _dg11Fields),
-            ...dg12.others('DG12', _dg12Fields),
+            ...dg12.others('DG12', {
+              ..._dg12Fields,
+              // The Algerian ID card keeps its expiry date here, in full
+              // (YYYYMMDD): the same as dateOfExpiry.
+              if (_date(dg12['5F1B']) != null) '5F1B',
+            }),
           }
         : const {},
     photo: photo,

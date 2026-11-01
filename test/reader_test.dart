@@ -103,12 +103,19 @@ void main() {
       want: Info.everything,
       checks: Check.values.toSet(),
     );
-    expect(doc.fullName, 'SPECIMEN DEMO');
-    expect(doc.otherNames, 'عينة تجريبية');
-    expect(doc.placeOfBirth, 'DEMO CITY, UTOPIA');
-    expect(doc.address, '1 DEMO STREET, DEMO CITY');
+    // The demo card has the Algerian layout, Arabic in ISO-8859-6.
+    expect(doc.fullName, 'عينة تجربة');
+    expect((doc.surnameArabic, doc.givenNamesArabic), ('عينة', 'تجربة'));
+    expect(doc.otherNames, isNull);
+    expect(doc.placeOfBirth, 'DEMO CITY');
+    expect(doc.placeOfBirthArabic, 'مدينة تجريبية');
+    expect(doc.address, isNull);
+    expect(doc.bloodGroup, 'O+');
     expect(doc.dateOfIssue, DateTime(2025, 1, 1));
     expect(doc.issuingAuthority, 'DEMO AUTHORITY');
+    expect(doc.issuingAuthorityArabic, 'سلطة تجريبية');
+    // 5F1B (the expiry date in full) and empty 5F16 are left out.
+    expect(doc.otherDetails, {'DG12/5F1D': 'DEMO IDENTITY CARD بطاقة تجريبية'});
     expect(doc.mrz!.split('\n'), hasLength(3));
     expect(doc.photo!.format, ImageFormat.jpeg);
     expect(doc.signature!.format, ImageFormat.jpeg);

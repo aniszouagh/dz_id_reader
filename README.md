@@ -1,4 +1,21 @@
-# dz_id_reader
+<p align="center">
+  <img src="doc/images/banner.webp" alt="A phone reading an identity card over NFC" width="100%">
+</p>
+
+<h1 align="center">dz_id_reader</h1>
+
+<p align="center">
+  Read the chip of Algerian ID cards, driving licences and passports over NFC,<br>
+  in your own Flutter screens, reading only what you need.
+</p>
+
+<p align="center">
+  <img alt="Version 0.1.0" src="https://img.shields.io/badge/version-0.1.0-2E7D32">
+  <img alt="Flutter 3.38+" src="https://img.shields.io/badge/Flutter-3.38%2B-02569B?logo=flutter&logoColor=white">
+  <img alt="Android" src="https://img.shields.io/badge/platform-Android-3DDC84?logo=android&logoColor=white">
+  <img alt="NFC: ICAO 9303 and ISO/IEC 18013" src="https://img.shields.io/badge/NFC-ICAO%209303%20%C2%B7%20ISO%2018013-555">
+  <img alt="Private package" src="https://img.shields.io/badge/package-private-lightgrey">
+</p>
 
 Private Flutter package (Android) that reads the chip of Algerian ID cards,
 passports and driving licences over NFC, and scans the MRZ with the camera
@@ -8,11 +25,42 @@ to get the key that unlocks the chip.
   app draws every page, in its own language.
 - **Reads only what you ask for.** Each value lives in a chip file; the
   reader reads only the files that hold what you asked for, and returns
-  only those values.
+  only those values. Text alone takes about 0.15 s on an Algerian ID card.
 - **Checks authenticity** (optional): the chip proves it is not a copy, and
   the data matches what the state signed.
+- **Arabic and Latin.** Names, place of birth and issuing authority come in
+  both scripts, as the Algerian documents store them.
 - **Nothing leaves the phone.** No storage, no network, no personal data in
   logs.
+
+## Screens
+
+The example app (`example/`) is built only on the public API: your app can
+look completely different. Shown with the made-up demo cards.
+
+<table>
+  <tr>
+    <td align="center"><img src="doc/images/screen-home.webp" width="240" alt="Home: scan or type the key, choose what to read"><br><sub>Choose what to read</sub></td>
+    <td align="center"><img src="doc/images/screen-reading.webp" width="240" alt="Waiting for the card"><br><sub>Your own "touch the card" panel</sub></td>
+    <td align="center"><img src="doc/images/screen-result.webp" width="240" alt="Photo, signature and values"><br><sub>Photo, signature, values</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="doc/images/screen-arabic.webp" width="240" alt="Arabic and Latin values of the ID card"><br><sub>Arabic and Latin values</sub></td>
+    <td align="center"><img src="doc/images/screen-licence.webp" width="240" alt="Driving licence values"><br><sub>Driving licence</sub></td>
+    <td align="center"><img src="doc/images/screen-security.webp" width="240" alt="Security checks"><br><sub>Security checks</sub></td>
+  </tr>
+</table>
+
+## How it works
+
+```mermaid
+flowchart LR
+  scan["Scan the MRZ<br/>MrzScanner / MrzCamera"] --> key["AccessKey"]
+  typed["Or type the 3 values"] --> key
+  key --> read["DocumentReader.read<br/>want: Info, checks: Check"]
+  read --> chip["NFC: unlock (BAC/BAP),<br/>read only the files needed"]
+  chip --> doc["IdDocument<br/>values, pictures, SecurityResult"]
+```
 
 ## Add it to an app
 

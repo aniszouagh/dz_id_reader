@@ -1,3 +1,8 @@
+## 0.1.1
+
+* Accepts `camera` 0.11 and `google_mlkit_text_recognition` 0.15 too, so apps
+  that already use those versions can add the package without upgrading.
+
 ## 0.1.0
 
 * Public API: `DocumentReader`, `AccessKey`, `Info`, `Check`, `IdDocument`,

@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version 0.1.0" src="https://img.shields.io/badge/version-0.1.0-2E7D32">
+  <img alt="Version 0.1.1" src="https://img.shields.io/badge/version-0.1.1-2E7D32">
   <img alt="Flutter 3.38+" src="https://img.shields.io/badge/Flutter-3.38%2B-02569B?logo=flutter&logoColor=white">
   <img alt="Android" src="https://img.shields.io/badge/platform-Android-3DDC84?logo=android&logoColor=white">
   <img alt="NFC: ICAO 9303 and ISO/IEC 18013" src="https://img.shields.io/badge/NFC-ICAO%209303%20%C2%B7%20ISO%2018013-555">
@@ -69,7 +69,7 @@ dependencies:
   dz_id_reader:
     git:
       url: https://github.com/aniszouagh/dz_id_reader.git
-      ref: v0.1.0
+      ref: v0.1.1
 ```
 
 The repository is private: the machine that builds the app needs read access

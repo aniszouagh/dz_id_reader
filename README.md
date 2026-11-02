@@ -51,6 +51,12 @@ look completely different. Shown with the made-up demo cards.
   </tr>
 </table>
 
+**Try it on a phone:** download `dz_id_reader-example-<version>.apk` from the
+[Releases](../../releases) page and install it. The APK holds the native code
+for arm phones only (64-bit and 32-bit, no x86 emulators), compressed: about
+26 MB instead of 85. It is signed with the debug key of the machine that built
+it, so a later APK installs over it only when built on that same machine.
+
 ## How it works
 
 ```mermaid

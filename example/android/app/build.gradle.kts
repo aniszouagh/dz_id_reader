@@ -39,6 +39,18 @@ android {
     }
 }
 
+// The release APK goes by hand to phones (GitHub release): arm native
+// libraries only (64-bit and 32-bit), compressed in the file (Android
+// unpacks them on install). The Flutter plugin fills every build type's
+// abiFilters with three CPU types, so x86 is dropped when packaging. Debug
+// and profile keep them all, for emulators.
+androidComponents {
+    onVariants(selector().withBuildType("release")) { variant ->
+        variant.packaging.jniLibs.excludes.addAll(listOf("**/x86/**", "**/x86_64/**"))
+        variant.packaging.jniLibs.useLegacyPackaging.set(true)
+    }
+}
+
 flutter {
     source = "../.."
 }
